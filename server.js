@@ -1,3 +1,6 @@
+Best
+
+
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -37,33 +40,14 @@ async function fetchFreshUrl(channelKey) {
                 '--disable-gpu',
                 '--single-process',
                 '--disable-web-security',
-                '--autoplay-policy=no-user-gesture-required',
-                '--disable-blink-features=AutomationControlled'
+                '--autoplay-policy=no-user-gesture-required'
             ]
         });
 
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
 
-        // 🔥 Ads, images, CSS block karein — sirf m3u8 capture karein
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
-            const type = req.resourceType();
-            const url = req.url();
-            
-            // m3u8 aur video requests allow karein
-            if (url.includes('.m3u8') || url.includes('.ts') || type === 'media' || type === 'xhr' || type === 'fetch' || type === 'document' || type === 'script') {
-                req.continue();
-            } 
-            // Ads aur bhaari resources block karein
-            else if (['image', 'font', 'stylesheet', 'websocket', 'manifest', 'other'].includes(type)) {
-                req.abort();
-            } 
-            else {
-                req.continue();
-            }
-        });
-
+        // Har request ko capture karein
         let m3u8Url = null;
         let allUrls = [];
         
@@ -71,46 +55,43 @@ async function fetchFreshUrl(channelKey) {
             const url = req.url();
             if (url.includes('.m3u8')) {
                 allUrls.push(url);
+                // Har pattern capture karein
                 if (!m3u8Url) {
                     m3u8Url = url;
                 }
+                // Main playlist ko prefer karein
                 if (url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
                     m3u8Url = url;
                 }
-                console.log(`📡 m3u8 captured: ${url.substring(0, 90)}...`);
             }
         });
 
         console.log(`🌐 Opening ${channel.url}...`);
-        
-        // 🔥 60 second timeout + error handle
-        try {
-            await page.goto(channel.url, { 
-                waitUntil: 'domcontentloaded', 
-                timeout: 60000 
-            });
-        } catch (navErr) {
-            console.log(`⚠️ Navigation slow: ${navErr.message}. Continuing...`);
-        }
+        await page.goto(channel.url, { 
+            waitUntil: 'domcontentloaded', 
+            timeout: 30000 
+        });
 
-        // Wait karein page load hone ke liye
-        await new Promise(r => setTimeout(r, 3000));
+        // Page load hone ka wait
+        await new Promise(r => setTimeout(r, 2000));
 
-        // Scroll karein
+        // Page ko scroll karein
         try {
             await page.evaluate(() => {
                 window.scrollTo(0, document.body.scrollHeight / 2);
             });
         } catch (e) {}
 
-        // Videos play karne ki koshish
+        // Videos aur buttons play karne ki koshish
         try {
             await page.evaluate(() => {
+                // Saari videos play karein
                 document.querySelectorAll('video').forEach(v => {
                     v.muted = true;
                     v.play().catch(() => {});
                 });
                 
+                // Play buttons dhoondein
                 const buttons = document.querySelectorAll('button, [role="button"], .play, .play-button, [class*="play"]');
                 buttons.forEach(b => {
                     try {
@@ -123,16 +104,13 @@ async function fetchFreshUrl(channelKey) {
             });
         } catch (e) {}
 
-        // 🔥 40 second tak wait karein m3u8 ke liye
-        console.log(`⏳ Waiting up to 40s for m3u8 URL...`);
-        for (let i = 0; i < 40; i++) {
+        // 25 second tak wait karein (zyada time)
+        console.log(`⏳ Waiting up to 25s for m3u8 URL...`);
+        for (let i = 0; i < 25; i++) {
             await new Promise(r => setTimeout(r, 1000));
-            if (m3u8Url) {
-                console.log(`✅ Found after ${i+1}s`);
-                break;
-            }
+            if (m3u8Url) break;
             
-            // Har 5 second baad videos phir try karein
+            // Har 5 second baad phir se try karein
             if (i % 5 === 4) {
                 try {
                     await page.evaluate(() => {
