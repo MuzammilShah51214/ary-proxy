@@ -8,16 +8,17 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// ARY Channels Configuration
+// ARY Channels with individual referers (ARY Qtv added)
 const CHANNELS = {
-    'k7x9p2m': { name: 'ARY News', url: 'https://live.arynews.tv/' },
-    'q3n8z1v': { name: 'ARY News 2', url: 'https://live.arynews.tv/' },
-    'w5r2y9t': { name: 'ARY Musik', url: 'https://live.arymusik.tv/' },
-    'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/' },
-    'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/' }
+    'k7x9p2m': { name: 'ARY News',    url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
+    'q3n8z1v': { name: 'ARY News 2',  url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
+    'w5r2y9t': { name: 'ARY Musik',   url: 'https://live.arymusik.tv/',   referer: 'https://live.arymusik.tv/' },
+    'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/', referer: 'https://live.arydigital.tv/' },
+    'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/', referer: 'https://live.aryzindagi.tv/' },
+    'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' }
 };
 
-// 🎯 Puppeteer se FRESH m3u8 URL nikalna (real-time)
+// Puppeteer se fresh m3u8 URL nikalna
 async function fetchFreshUrl(channelKey) {
     const channel = CHANNELS[channelKey];
     if (!channel) return null;
@@ -33,48 +34,35 @@ async function fetchFreshUrl(channelKey) {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--single-process',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process'
+                '--single-process'
             ]
         });
 
         const page = await browser.newPage();
-        
-        // Mobile UA (ARY mobile ko prefer karta hai)
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
 
-        // m3u8 requests capture karein
         let m3u8Url = null;
         page.on('request', (req) => {
             const url = req.url();
             if (url.includes('.m3u8')) {
-                // Prefer main.m3u8 (master playlist)
                 if (!m3u8Url || url.includes('main.m3u8')) {
                     m3u8Url = url;
-                    console.log(`   📡 Captured: ${url.substring(0, 90)}...`);
                 }
             }
         });
 
         console.log(`🌐 Opening ${channel.url}...`);
-        await page.goto(channel.url, { 
-            waitUntil: 'domcontentloaded', 
-            timeout: 25000 
-        });
+        await page.goto(channel.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
-        // Video auto-play karne ki koshish
         try {
             await page.evaluate(() => {
-                const videos = document.querySelectorAll('video');
-                videos.forEach(v => {
+                document.querySelectorAll('video').forEach(v => {
                     v.muted = true;
                     v.play().catch(() => {});
                 });
             });
         } catch (e) {}
 
-        // Max 10 second wait for m3u8
         console.log(`⏳ Waiting for m3u8 URL...`);
         for (let i = 0; i < 10; i++) {
             await new Promise(r => setTimeout(r, 800));
@@ -88,7 +76,6 @@ async function fetchFreshUrl(channelKey) {
             console.log(`❌ No m3u8 URL found for ${channel.name}`);
             return null;
         }
-
     } catch (err) {
         console.error(`❌ Error fetching ${channelKey}:`, err.message);
         return null;
@@ -97,29 +84,26 @@ async function fetchFreshUrl(channelKey) {
     }
 }
 
-// Home route
 app.get('/', (req, res) => {
     res.json({ 
         status: 'ok', 
-        message: 'ARY Proxy with real-time Puppeteer fetch',
-        channels: Object.keys(CHANNELS)
+        channels: Object.keys(CHANNELS).map(k => `${k} = ${CHANNELS[k].name}`)
     });
 });
 
-// 🎯 Short route: /b2c7d9e.m3u8 — HAR REQUEST PE FRESH URL
+// Short route: /b2c7d9e.m3u8 — har request pe fresh URL
 app.get('/:code', async (req, res, next) => {
     const code = req.params.code.replace(/\.m3u8$/i, '');
     const channel = CHANNELS[code];
     
     if (!channel) return next();
 
-    // 🔥 HAR BAAR FRESH URL NIKALO (no cache)
-    console.log(`📡 Request received for ${channel.name}`);
+    console.log(`📡 Request for ${channel.name}`);
     const channelUrl = await fetchFreshUrl(code);
     
     if (!channelUrl) {
         return res.status(503).json({ 
-            error: 'Stream temporarily unavailable. Try again in 30 seconds.',
+            error: 'Stream temporarily unavailable. Try again.',
             channel: channel.name
         });
     }
@@ -127,8 +111,8 @@ app.get('/:code', async (req, res, next) => {
     try {
         const response = await axios.get(channelUrl, {
             headers: {
-                'Referer': 'https://live.arydigital.tv/',
-                'Origin': 'https://live.arydigital.tv',
+                'Referer': channel.referer,
+                'Origin': new URL(channel.referer).origin,
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
                 'Accept': '*/*'
             },
@@ -144,17 +128,16 @@ app.get('/:code', async (req, res, next) => {
         let text = Buffer.from(response.data).toString('utf-8');
         const baseUrl = channelUrl.substring(0, channelUrl.lastIndexOf('/') + 1);
         const proxyBase = `${req.protocol}://${req.get('host')}/proxy`;
-        const referer = 'https://live.arydigital.tv/';
 
         text = text.split('\n').map(line => {
             const trimmed = line.trim();
             if (trimmed && !trimmed.startsWith('#')) {
                 const fullUrl = trimmed.startsWith('http') ? trimmed : baseUrl + trimmed;
-                return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}`;
+                return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}`;
             }
             return line.replace(/URI="([^"]+)"/g, (match, uri) => {
                 const fullUrl = uri.startsWith('http') ? uri : baseUrl + uri;
-                return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}"`;
+                return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}"`;
             });
         }).join('\n');
 
@@ -165,7 +148,7 @@ app.get('/:code', async (req, res, next) => {
     }
 });
 
-// Generic proxy route (m3u8 segments, keys etc)
+// Generic proxy route
 app.get('/proxy', async (req, res) => {
     const targetUrl = req.query.url;
     const referer = req.query.referer || 'https://aryzap.com/';
@@ -220,9 +203,8 @@ app.get('/proxy', async (req, res) => {
     }
 });
 
-// Server start
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
     console.log(`✅ ARY Proxy running on port ${PORT}`);
-    console.log(`🚀 Real-time Puppeteer mode enabled`);
-    console.log(`📡 No caching — har request pe fresh URL`);
+    console.log(`🚀 Real-time Puppeteer mode`);
+    console.log(`📡 No caching — fresh URL har request pe`);
 });
