@@ -1,6 +1,3 @@
-Best
-
-
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -11,7 +8,6 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// 🔐 SECURITY KEY
 const SECRET_KEY = 'MUZAMMIL2026ARY';
 
 const CHANNELS = {
@@ -47,7 +43,6 @@ async function fetchFreshUrl(channelKey) {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
 
-        // Har request ko capture karein
         let m3u8Url = null;
         let allUrls = [];
         
@@ -55,11 +50,9 @@ async function fetchFreshUrl(channelKey) {
             const url = req.url();
             if (url.includes('.m3u8')) {
                 allUrls.push(url);
-                // Har pattern capture karein
                 if (!m3u8Url) {
                     m3u8Url = url;
                 }
-                // Main playlist ko prefer karein
                 if (url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
                     m3u8Url = url;
                 }
@@ -72,26 +65,21 @@ async function fetchFreshUrl(channelKey) {
             timeout: 30000 
         });
 
-        // Page load hone ka wait
         await new Promise(r => setTimeout(r, 2000));
 
-        // Page ko scroll karein
         try {
             await page.evaluate(() => {
                 window.scrollTo(0, document.body.scrollHeight / 2);
             });
         } catch (e) {}
 
-        // Videos aur buttons play karne ki koshish
         try {
             await page.evaluate(() => {
-                // Saari videos play karein
                 document.querySelectorAll('video').forEach(v => {
                     v.muted = true;
                     v.play().catch(() => {});
                 });
                 
-                // Play buttons dhoondein
                 const buttons = document.querySelectorAll('button, [role="button"], .play, .play-button, [class*="play"]');
                 buttons.forEach(b => {
                     try {
@@ -104,13 +92,11 @@ async function fetchFreshUrl(channelKey) {
             });
         } catch (e) {}
 
-        // 25 second tak wait karein (zyada time)
         console.log(`⏳ Waiting up to 25s for m3u8 URL...`);
         for (let i = 0; i < 25; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (m3u8Url) break;
             
-            // Har 5 second baad phir se try karein
             if (i % 5 === 4) {
                 try {
                     await page.evaluate(() => {
