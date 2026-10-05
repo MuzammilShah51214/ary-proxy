@@ -8,7 +8,10 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// ARY Channels with individual referers (ARY Qtv added)
+// 🔐 SECURITY KEY — apni marzi se change karein
+const SECRET_KEY = 'MUZAMMIL2026ARY';
+
+// ARY Channels
 const CHANNELS = {
     'k7x9p2m': { name: 'ARY News',    url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
     'q3n8z1v': { name: 'ARY News 2',  url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
@@ -18,7 +21,6 @@ const CHANNELS = {
     'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' }
 };
 
-// Puppeteer se fresh m3u8 URL nikalna
 async function fetchFreshUrl(channelKey) {
     const channel = CHANNELS[channelKey];
     if (!channel) return null;
@@ -51,7 +53,6 @@ async function fetchFreshUrl(channelKey) {
             }
         });
 
-        console.log(`🌐 Opening ${channel.url}...`);
         await page.goto(channel.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
         try {
@@ -63,47 +64,53 @@ async function fetchFreshUrl(channelKey) {
             });
         } catch (e) {}
 
-        console.log(`⏳ Waiting for m3u8 URL...`);
         for (let i = 0; i < 10; i++) {
             await new Promise(r => setTimeout(r, 800));
             if (m3u8Url) break;
         }
 
-        if (m3u8Url) {
-            console.log(`✅ Got URL for ${channel.name}`);
-            return m3u8Url;
-        } else {
-            console.log(`❌ No m3u8 URL found for ${channel.name}`);
-            return null;
-        }
+        return m3u8Url;
     } catch (err) {
-        console.error(`❌ Error fetching ${channelKey}:`, err.message);
+        console.error(`❌ Error: ${err.message}`);
         return null;
     } finally {
         if (browser) await browser.close();
     }
 }
 
+// Home route
 app.get('/', (req, res) => {
     res.json({ 
         status: 'ok', 
-        channels: Object.keys(CHANNELS).map(k => `${k} = ${CHANNELS[k].name}`)
+        message: 'ARY Proxy is running',
+        note: 'Access requires ?key=YOUR_SECRET_KEY'
     });
 });
 
-// Short route: /b2c7d9e.m3u8 — har request pe fresh URL
+// 🎯 Short route with SECURITY KEY: /a8f4h6j.m3u8?key=MUZAMMIL2026ARY
 app.get('/:code', async (req, res, next) => {
     const code = req.params.code.replace(/\.m3u8$/i, '');
     const channel = CHANNELS[code];
     
     if (!channel) return next();
 
-    console.log(`📡 Request for ${channel.name}`);
+    // 🔐 SECURITY CHECK
+    const providedKey = req.query.key;
+    
+    if (!providedKey || providedKey !== SECRET_KEY) {
+        console.log(`🚫 Unauthorized: ${channel.name}`);
+        return res.status(403).json({ 
+            error: 'Forbidden',
+            message: 'Invalid or missing security key'
+        });
+    }
+
+    console.log(`✅ Authorized: ${channel.name}`);
     const channelUrl = await fetchFreshUrl(code);
     
     if (!channelUrl) {
         return res.status(503).json({ 
-            error: 'Stream temporarily unavailable. Try again.',
+            error: 'Stream temporarily unavailable',
             channel: channel.name
         });
     }
@@ -133,29 +140,33 @@ app.get('/:code', async (req, res, next) => {
             const trimmed = line.trim();
             if (trimmed && !trimmed.startsWith('#')) {
                 const fullUrl = trimmed.startsWith('http') ? trimmed : baseUrl + trimmed;
-                return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}`;
+                return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}&key=${SECRET_KEY}`;
             }
             return line.replace(/URI="([^"]+)"/g, (match, uri) => {
                 const fullUrl = uri.startsWith('http') ? uri : baseUrl + uri;
-                return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}"`;
+                return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}&key=${SECRET_KEY}"`;
             });
         }).join('\n');
 
         res.send(text);
     } catch (err) {
-        console.error(`❌ Proxy error for ${channel.name}:`, err.message);
+        console.error(`❌ Proxy error: ${err.message}`);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Generic proxy route
+// Generic proxy route (segments ke liye — key optional)
 app.get('/proxy', async (req, res) => {
+    const providedKey = req.query.key;
+    
+    if (providedKey && providedKey !== SECRET_KEY) {
+        return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const targetUrl = req.query.url;
     const referer = req.query.referer || 'https://aryzap.com/';
 
-    if (!targetUrl) {
-        return res.status(400).json({ error: 'url parameter required' });
-    }
+    if (!targetUrl) return res.status(400).json({ error: 'url required' });
 
     try {
         const response = await axios.get(targetUrl, {
@@ -185,11 +196,11 @@ app.get('/proxy', async (req, res) => {
                 const trimmed = line.trim();
                 if (trimmed && !trimmed.startsWith('#')) {
                     const fullUrl = trimmed.startsWith('http') ? trimmed : baseUrl + trimmed;
-                    return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}`;
+                    return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}&key=${SECRET_KEY}`;
                 }
                 return line.replace(/URI="([^"]+)"/g, (match, uri) => {
                     const fullUrl = uri.startsWith('http') ? uri : baseUrl + uri;
-                    return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}"`;
+                    return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}&key=${SECRET_KEY}"`;
                 });
             }).join('\n');
 
@@ -205,6 +216,6 @@ app.get('/proxy', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`✅ ARY Proxy running on port ${PORT}`);
-    console.log(`🚀 Real-time Puppeteer mode`);
-    console.log(`📡 No caching — fresh URL har request pe`);
+    console.log(`🔐 Security key required: ${SECRET_KEY}`);
+    console.log(`📡 Real-time Puppeteer mode`);
 });
