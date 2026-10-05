@@ -9,32 +9,31 @@ app.use(cors());
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = 'MUZAMMIL2026ARY';
 
-// Stream cache in-memory (Expiry: 15 mins)
+// Stream URLs cache karne ke liye (Expiry: 30 mins)
 const streamCache = {}; 
-const CACHE_TTL = 15 * 60 * 1000; 
+const CACHE_TTL = 30 * 60 * 1000; 
 
 const CHANNELS = {
-    'k7x9p2m': { name: 'ARY News',     url: 'https://live.arynews.tv/',        referer: 'https://live.arynews.tv/' },
-    'q3n8z1v': { name: 'ARY News 2',   url: 'https://live.arynews.tv/',        referer: 'https://live.arynews.tv/' },
-    'w5r2y9t': { name: 'ARY Musik',    url: 'https://live.arymusik.tv/',       referer: 'https://live.arymusik.tv/' },
-    'a8f4h6j': { name: 'ARY Digital',  url: 'https://live.arydigital.tv/',     referer: 'https://live.arydigital.tv/' },
-    'b2c7d9e': { name: 'ARY Zindagi',  url: 'https://live.aryzindagi.tv/',     referer: 'https://live.aryzindagi.tv/' },
-    'm4k8n2p': { name: 'ARY Qtv',      url: 'https://live.aryqtv.tv/',         referer: 'https://live.aryqtv.tv/' },
-    'ahlebait': { name: 'Ahlebait TV', url: 'https://ahlebaittv.net/live-streaming/', referer: 'https://ahlebaittv.net/' }
+    'k7x9p2m': { name: 'ARY News',    url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
+    'q3n8z1v': { name: 'ARY News 2',  url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
+    'w5r2y9t': { name: 'ARY Musik',   url: 'https://live.arymusik.tv/',   referer: 'https://live.arymusik.tv/' },
+    'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/', referer: 'https://live.arydigital.tv/' },
+    'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/', referer: 'https://live.aryzindagi.tv/' },
+    'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' }
 };
 
 async function fetchFreshUrl(channelKey) {
     const channel = CHANNELS[channelKey];
     if (!channel) return null;
 
-    // Cache Check
+    // Check if valid cached URL exists
     const cached = streamCache[channelKey];
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-        console.log(`⚡ [CACHE HIT] Direct loading for ${channel.name}`);
+        console.log(`⚡ [CACHE HIT] Fast loading for ${channel.name}`);
         return cached.url;
     }
 
-    console.log(`🔍 Fetching stream URL for ${channel.name}...`);
+    console.log(`🔍 Fetching fresh URL via Puppeteer for ${channel.name}...`);
 
     let browser;
     try {
@@ -50,72 +49,56 @@ async function fetchFreshUrl(channelKey) {
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
+
+        // OPTIMIZATION: Images, Stylesheets aur Fonts block karke page fast load karein
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            const resourceType = req.resourceType();
+            if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+                req.abort();
+            } else {
+                req.continue();
+            }
+        });
 
         let m3u8Url = null;
 
         page.on('request', (req) => {
             const url = req.url();
-            
-            // Ahlebait TV Official Page Matcher
-            if (channelKey === 'ahlebait') {
-                if (url.includes('.m3u8') || url.includes('manifest') || url.includes('playlist')) {
-                    if (!m3u8Url) {
-                        m3u8Url = url;
-                        console.log(`🎯 Ahlebait Stream Captured: ${url}`);
-                    }
-                }
-            } else {
-                // ARY Channels Matcher
-                if (url.includes('.m3u8')) {
-                    if (!m3u8Url || url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
-                        m3u8Url = url;
-                    }
+            if (url.includes('.m3u8')) {
+                if (!m3u8Url || url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
+                    m3u8Url = url;
                 }
             }
         });
 
-        console.log(`🌐 Navigating to ${channel.url}...`);
         await page.goto(channel.url, { 
             waitUntil: 'domcontentloaded', 
-            timeout: 25000 
+            timeout: 15000 
         });
 
-        // Autoplay trigger & Iframe support
-        try {
-            await page.evaluate(() => {
-                document.querySelectorAll('video').forEach(v => {
-                    v.muted = true;
-                    v.play().catch(() => {});
-                });
-                
-                const playBtn = document.querySelector('.vjs-big-play-button') || 
-                                document.querySelector('[class*="play"]') ||
-                                document.querySelector('iframe');
-                if (playBtn) playBtn.click();
-            });
-        } catch (e) {}
-
-        // Wait up to 10 seconds for stream request
-        for (let i = 0; i < 10; i++) {
+        // Maximum 8 seconds wait time
+        for (let i = 0; i < 8; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (m3u8Url) break;
         }
 
         if (m3u8Url) {
-            console.log(`✅ Success URL: ${m3u8Url.substring(0, 90)}...`);
+            console.log(`✅ Fresh URL Captured: ${m3u8Url.substring(0, 80)}...`);
+            // Cache in memory
             streamCache[channelKey] = {
                 url: m3u8Url,
                 timestamp: Date.now()
             };
             return m3u8Url;
         } else {
-            console.log(`❌ No stream found for ${channel.name}`);
+            console.log(`❌ No m3u8 URL found for ${channel.name}`);
             return null;
         }
 
     } catch (err) {
-        console.error(`❌ Puppeteer Error: ${err.message}`);
+        console.error(`❌ Browser Error: ${err.message}`);
         return null;
     } finally {
         if (browser) await browser.close();
@@ -123,7 +106,7 @@ async function fetchFreshUrl(channelKey) {
 }
 
 app.get('/', (req, res) => {
-    res.json({ status: 'ok', message: 'Proxy Running Fast' });
+    res.json({ status: 'ok', message: 'ARY Proxy running fast' });
 });
 
 app.get('/:code', async (req, res, next) => {
@@ -140,7 +123,10 @@ app.get('/:code', async (req, res, next) => {
     const channelUrl = await fetchFreshUrl(code);
     
     if (!channelUrl) {
-        return res.status(503).json({ error: 'Stream unavailable', channel: channel.name });
+        return res.status(503).json({ 
+            error: 'Stream unavailable',
+            channel: channel.name
+        });
     }
 
     try {
@@ -148,11 +134,12 @@ app.get('/:code', async (req, res, next) => {
             headers: {
                 'Referer': channel.referer,
                 'Origin': new URL(channel.referer).origin,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
                 'Accept': '*/*'
             },
             responseType: 'arraybuffer',
-            timeout: 10000
+            timeout: 10000,
+            maxRedirects: 5
         });
 
         const contentType = response.headers['content-type'] || 'application/vnd.apple.mpegurl';
@@ -177,7 +164,8 @@ app.get('/:code', async (req, res, next) => {
 
         res.send(text);
     } catch (err) {
-        console.error(`❌ Main Proxy error: ${err.message}`);
+        console.error(`❌ Proxy error: ${err.message}`);
+        // Clear cache if stream fails
         delete streamCache[code];
         res.status(500).json({ error: err.message });
     }
@@ -190,7 +178,7 @@ app.get('/proxy', async (req, res) => {
     }
 
     const targetUrl = req.query.url;
-    const referer = req.query.referer || 'https://ahlebaittv.net/';
+    const referer = req.query.referer || 'https://live.arynews.tv/';
 
     if (!targetUrl) return res.status(400).json({ error: 'url required' });
 
@@ -203,7 +191,8 @@ app.get('/proxy', async (req, res) => {
                 'Accept': '*/*'
             },
             responseType: 'arraybuffer',
-            timeout: 10000
+            timeout: 10000,
+            maxRedirects: 5
         });
 
         const contentType = response.headers['content-type'] || 'application/octet-stream';
@@ -234,11 +223,11 @@ app.get('/proxy', async (req, res) => {
 
         res.send(data);
     } catch (err) {
-        console.error('Sub Proxy error:', err.message);
+        console.error('Proxy error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`✅ Proxy running on port ${PORT}`);
+    console.log(`✅ ARY Proxy running on port ${PORT}`);
 });
