@@ -30,39 +30,105 @@ async function fetchFreshUrl(channelKey) {
     try {
         browser = await puppeteer.launch({
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--single-process',
+                '--disable-web-security',
+                '--autoplay-policy=no-user-gesture-required'
+            ]
         });
 
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
 
+        // Har request ko capture karein
         let m3u8Url = null;
+        let allUrls = [];
+        
         page.on('request', (req) => {
             const url = req.url();
             if (url.includes('.m3u8')) {
-                if (!m3u8Url || url.includes('main.m3u8')) {
+                allUrls.push(url);
+                // Har pattern capture karein
+                if (!m3u8Url) {
+                    m3u8Url = url;
+                }
+                // Main playlist ko prefer karein
+                if (url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
                     m3u8Url = url;
                 }
             }
         });
 
-        await page.goto(channel.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+        console.log(`🌐 Opening ${channel.url}...`);
+        await page.goto(channel.url, { 
+            waitUntil: 'domcontentloaded', 
+            timeout: 30000 
+        });
 
+        // Page load hone ka wait
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Page ko scroll karein
         try {
             await page.evaluate(() => {
+                window.scrollTo(0, document.body.scrollHeight / 2);
+            });
+        } catch (e) {}
+
+        // Videos aur buttons play karne ki koshish
+        try {
+            await page.evaluate(() => {
+                // Saari videos play karein
                 document.querySelectorAll('video').forEach(v => {
                     v.muted = true;
                     v.play().catch(() => {});
                 });
+                
+                // Play buttons dhoondein
+                const buttons = document.querySelectorAll('button, [role="button"], .play, .play-button, [class*="play"]');
+                buttons.forEach(b => {
+                    try {
+                        const text = (b.textContent || '').toLowerCase();
+                        if (text.includes('play') || text === '') {
+                            b.click();
+                        }
+                    } catch (e) {}
+                });
             });
         } catch (e) {}
 
-        for (let i = 0; i < 10; i++) {
-            await new Promise(r => setTimeout(r, 800));
+        // 25 second tak wait karein (zyada time)
+        console.log(`⏳ Waiting up to 25s for m3u8 URL...`);
+        for (let i = 0; i < 25; i++) {
+            await new Promise(r => setTimeout(r, 1000));
             if (m3u8Url) break;
+            
+            // Har 5 second baad phir se try karein
+            if (i % 5 === 4) {
+                try {
+                    await page.evaluate(() => {
+                        document.querySelectorAll('video').forEach(v => {
+                            v.muted = true;
+                            v.play().catch(() => {});
+                        });
+                    });
+                } catch (e) {}
+            }
         }
 
-        return m3u8Url;
+        if (m3u8Url) {
+            console.log(`✅ Got URL: ${m3u8Url.substring(0, 100)}...`);
+            return m3u8Url;
+        } else {
+            console.log(`❌ No m3u8 URL for ${channel.name}`);
+            console.log(`   URLs captured: ${allUrls.length}`);
+            return null;
+        }
+
     } catch (err) {
         console.error(`❌ Error: ${err.message}`);
         return null;
@@ -72,7 +138,7 @@ async function fetchFreshUrl(channelKey) {
 }
 
 app.get('/', (req, res) => {
-    res.json({ status: 'ok', message: 'ARY Proxy is running' });
+    res.json({ status: 'ok', message: 'ARY Proxy running' });
 });
 
 app.get('/:code', async (req, res, next) => {
@@ -83,18 +149,17 @@ app.get('/:code', async (req, res, next) => {
 
     const providedKey = req.query.key;
     if (!providedKey || providedKey !== SECRET_KEY) {
-        console.log(`🚫 Unauthorized: ${channel.name}`);
-        return res.status(403).json({ 
-            error: 'Forbidden',
-            message: 'Invalid or missing security key'
-        });
+        return res.status(403).json({ error: 'Forbidden' });
     }
 
-    console.log(`✅ Authorized: ${channel.name}`);
+    console.log(`✅ Request: ${channel.name}`);
     const channelUrl = await fetchFreshUrl(code);
     
     if (!channelUrl) {
-        return res.status(503).json({ error: 'Stream unavailable', channel: channel.name });
+        return res.status(503).json({ 
+            error: 'Stream unavailable',
+            channel: channel.name
+        });
     }
 
     try {
@@ -116,8 +181,6 @@ app.get('/:code', async (req, res, next) => {
 
         let text = Buffer.from(response.data).toString('utf-8');
         const baseUrl = channelUrl.substring(0, channelUrl.lastIndexOf('/') + 1);
-        
-        // 🔥 HTTPS HARDCODED — mixed content fix
         const proxyBase = `https://${req.get('host')}/proxy`;
 
         text = text.split('\n').map(line => {
@@ -172,8 +235,6 @@ app.get('/proxy', async (req, res) => {
         if (targetUrl.includes('.m3u8') || contentType.includes('mpegurl')) {
             let text = Buffer.from(data).toString('utf-8');
             const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-            
-            // 🔥 HTTPS HARDCODED
             const proxyBase = `https://${req.get('host')}/proxy`;
 
             text = text.split('\n').map(line => {
@@ -199,7 +260,7 @@ app.get('/proxy', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`✅ ARY Proxy running on port ${PORT}`);
-    console.log(`🔐 Security key: ${SECRET_KEY}`);
-    console.log(`🔒 HTTPS enforced for segments`);
+    console.log(`✅ ARY Proxy on port ${PORT}`);
+    console.log(`🔐 Key: ${SECRET_KEY}`);
+    console.log(`🔒 HTTPS enforced`);
 });
