@@ -17,10 +17,7 @@ const CHANNELS = {
     'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/' }
 };
 
-// Token cache
-const tokenCache = {};
-
-// Puppeteer se fresh m3u8 URL nikalna
+// 🎯 Puppeteer se FRESH m3u8 URL nikalna (real-time)
 async function fetchFreshUrl(channelKey) {
     const channel = CHANNELS[channelKey];
     if (!channel) return null;
@@ -36,30 +33,37 @@ async function fetchFreshUrl(channelKey) {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--single-process'
+                '--single-process',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process'
             ]
         });
 
         const page = await browser.newPage();
         
+        // Mobile UA (ARY mobile ko prefer karta hai)
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
 
+        // m3u8 requests capture karein
         let m3u8Url = null;
         page.on('request', (req) => {
             const url = req.url();
             if (url.includes('.m3u8')) {
+                // Prefer main.m3u8 (master playlist)
                 if (!m3u8Url || url.includes('main.m3u8')) {
                     m3u8Url = url;
+                    console.log(`   📡 Captured: ${url.substring(0, 90)}...`);
                 }
             }
         });
 
         console.log(`🌐 Opening ${channel.url}...`);
         await page.goto(channel.url, { 
-            waitUntil: 'networkidle2', 
-            timeout: 30000 
+            waitUntil: 'domcontentloaded', 
+            timeout: 25000 
         });
 
+        // Video auto-play karne ki koshish
         try {
             await page.evaluate(() => {
                 const videos = document.querySelectorAll('video');
@@ -70,14 +74,15 @@ async function fetchFreshUrl(channelKey) {
             });
         } catch (e) {}
 
+        // Max 10 second wait for m3u8
         console.log(`⏳ Waiting for m3u8 URL...`);
-        for (let i = 0; i < 15; i++) {
-            await new Promise(r => setTimeout(r, 1000));
+        for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 800));
             if (m3u8Url) break;
         }
 
         if (m3u8Url) {
-            console.log(`✅ Got URL for ${channel.name}: ${m3u8Url.substring(0, 80)}...`);
+            console.log(`✅ Got URL for ${channel.name}`);
             return m3u8Url;
         } else {
             console.log(`❌ No m3u8 URL found for ${channel.name}`);
@@ -92,48 +97,31 @@ async function fetchFreshUrl(channelKey) {
     }
 }
 
-// Auto-refresh — har 30 minute
-async function refreshAllTokens() {
-    console.log('🔄 Starting auto-refresh...');
-    for (const key of Object.keys(CHANNELS)) {
-        const url = await fetchFreshUrl(key);
-        if (url) {
-            tokenCache[key] = url;
-            console.log(`✅ ${CHANNELS[key].name} → cached`);
-        }
-    }
-    console.log('🎉 Auto-refresh complete');
-}
-
+// Home route
 app.get('/', (req, res) => {
     res.json({ 
         status: 'ok', 
-        message: 'ARY Proxy with Puppeteer auto-refresh',
-        channels: Object.keys(CHANNELS),
-        cached: Object.keys(tokenCache)
+        message: 'ARY Proxy with real-time Puppeteer fetch',
+        channels: Object.keys(CHANNELS)
     });
 });
 
-// Short route: /a8f4h6j.m3u8
+// 🎯 Short route: /b2c7d9e.m3u8 — HAR REQUEST PE FRESH URL
 app.get('/:code', async (req, res, next) => {
     const code = req.params.code.replace(/\.m3u8$/i, '');
     const channel = CHANNELS[code];
     
     if (!channel) return next();
 
-    let channelUrl = tokenCache[code];
+    // 🔥 HAR BAAR FRESH URL NIKALO (no cache)
+    console.log(`📡 Request received for ${channel.name}`);
+    const channelUrl = await fetchFreshUrl(code);
     
     if (!channelUrl) {
-        console.log(`📡 No cache for ${channel.name}, fetching...`);
-        channelUrl = await fetchFreshUrl(code);
-        if (channelUrl) {
-            tokenCache[code] = channelUrl;
-        } else {
-            return res.status(503).json({ 
-                error: 'Stream temporarily unavailable. Try again in 30 seconds.',
-                channel: channel.name
-            });
-        }
+        return res.status(503).json({ 
+            error: 'Stream temporarily unavailable. Try again in 30 seconds.',
+            channel: channel.name
+        });
     }
 
     try {
@@ -172,20 +160,12 @@ app.get('/:code', async (req, res, next) => {
 
         res.send(text);
     } catch (err) {
-        if (err.response && (err.response.status === 403 || err.response.status === 404)) {
-            console.log(`⚠️ URL expired for ${channel.name}, refetching...`);
-            delete tokenCache[code];
-            const freshUrl = await fetchFreshUrl(code);
-            if (freshUrl) {
-                tokenCache[code] = freshUrl;
-                return res.redirect(`/${code}.m3u8`);
-            }
-        }
+        console.error(`❌ Proxy error for ${channel.name}:`, err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Generic proxy
+// Generic proxy route (m3u8 segments, keys etc)
 app.get('/proxy', async (req, res) => {
     const targetUrl = req.query.url;
     const referer = req.query.referer || 'https://aryzap.com/';
@@ -240,13 +220,9 @@ app.get('/proxy', async (req, res) => {
     }
 });
 
+// Server start
 app.listen(PORT, async () => {
     console.log(`✅ ARY Proxy running on port ${PORT}`);
-    console.log(`🚀 Puppeteer enabled`);
-    
-    setTimeout(() => {
-        refreshAllTokens();
-    }, 5000);
-    
-    setInterval(refreshAllTokens, 30 * 60 * 1000);
+    console.log(`🚀 Real-time Puppeteer mode enabled`);
+    console.log(`📡 No caching — har request pe fresh URL`);
 });
