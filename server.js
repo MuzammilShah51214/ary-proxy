@@ -9,7 +9,7 @@ app.use(cors());
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = 'MUZAMMIL2026ARY';
 
-// Stream cache in-memory (Expiry: 15 mins for dynamic links)
+// Stream cache in-memory (Expiry: 15 mins)
 const streamCache = {}; 
 const CACHE_TTL = 15 * 60 * 1000; 
 
@@ -20,7 +20,7 @@ const CHANNELS = {
     'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/', referer: 'https://live.arydigital.tv/' },
     'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/', referer: 'https://live.aryzindagi.tv/' },
     'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' },
-    'tvtoday': { name: 'TV Today',    url: 'https://tamashaweb.com/live-tv?channel=tv-today', referer: 'https://tamashaweb.com/' }
+    'ahlebait': { name: 'Ahlebait TV', url: 'https://video.ibm.com/embed/23693473', referer: 'https://video.ibm.com/' }
 };
 
 async function fetchFreshUrl(channelKey) {
@@ -57,14 +57,16 @@ async function fetchFreshUrl(channelKey) {
         page.on('request', (req) => {
             const url = req.url();
             
-            // Tamasha Web Special Token Links (chunks.m3u8, wmsAuthSign)
-            if (channelKey === 'tvtoday') {
-                if (url.includes('chunks.m3u8') || url.includes('wmsAuthSign') || (url.includes('.m3u8') && url.includes('tamashaweb'))) {
-                    m3u8Url = url;
-                    console.log(`🎯 Tamasha URL Captured: ${url}`);
+            // Ahlebait TV (IBM / Ustream embed matcher)
+            if (channelKey === 'ahlebait') {
+                if (url.includes('.m3u8') || url.includes('playlist') || url.includes('manifest')) {
+                    if (url.includes('ustream') || url.includes('ibm') || url.includes('video') || url.includes('live')) {
+                        m3u8Url = url;
+                        console.log(`🎯 Ahlebait Stream Captured: ${url}`);
+                    }
                 }
             } else {
-                // ARY Channels
+                // ARY Channels Matcher
                 if (url.includes('.m3u8')) {
                     if (!m3u8Url || url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
                         m3u8Url = url;
@@ -79,7 +81,7 @@ async function fetchFreshUrl(channelKey) {
             timeout: 20000 
         });
 
-        // Trigger autoplay/clicks if required
+        // Autoplay trigger
         try {
             await page.evaluate(() => {
                 document.querySelectorAll('video').forEach(v => {
@@ -91,7 +93,7 @@ async function fetchFreshUrl(channelKey) {
             });
         } catch (e) {}
 
-        // Wait up to 10 seconds for stream request to fire
+        // Wait up to 10 seconds for stream request
         for (let i = 0; i < 10; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (m3u8Url) break;
@@ -118,7 +120,7 @@ async function fetchFreshUrl(channelKey) {
 }
 
 app.get('/', (req, res) => {
-    res.json({ status: 'ok', message: 'ARY & Tamasha Proxy Running Fast' });
+    res.json({ status: 'ok', message: 'Proxy Running Fast' });
 });
 
 app.get('/:code', async (req, res, next) => {
@@ -185,7 +187,7 @@ app.get('/proxy', async (req, res) => {
     }
 
     const targetUrl = req.query.url;
-    const referer = req.query.referer || 'https://tamashaweb.com/';
+    const referer = req.query.referer || 'https://video.ibm.com/';
 
     if (!targetUrl) return res.status(400).json({ error: 'url required' });
 
