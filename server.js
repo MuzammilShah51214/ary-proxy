@@ -14,13 +14,13 @@ const streamCache = {};
 const CACHE_TTL = 15 * 60 * 1000; 
 
 const CHANNELS = {
-    'k7x9p2m': { name: 'ARY News',    url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
-    'q3n8z1v': { name: 'ARY News 2',  url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
-    'w5r2y9t': { name: 'ARY Musik',   url: 'https://live.arymusik.tv/',   referer: 'https://live.arymusik.tv/' },
-    'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/', referer: 'https://live.arydigital.tv/' },
-    'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/', referer: 'https://live.aryzindagi.tv/' },
-    'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' },
-    'ahlebait': { name: 'Ahlebait TV', url: 'https://video.ibm.com/embed/23693473', referer: 'https://video.ibm.com/' }
+    'k7x9p2m': { name: 'ARY News',     url: 'https://live.arynews.tv/',        referer: 'https://live.arynews.tv/' },
+    'q3n8z1v': { name: 'ARY News 2',   url: 'https://live.arynews.tv/',        referer: 'https://live.arynews.tv/' },
+    'w5r2y9t': { name: 'ARY Musik',    url: 'https://live.arymusik.tv/',       referer: 'https://live.arymusik.tv/' },
+    'a8f4h6j': { name: 'ARY Digital',  url: 'https://live.arydigital.tv/',     referer: 'https://live.arydigital.tv/' },
+    'b2c7d9e': { name: 'ARY Zindagi',  url: 'https://live.aryzindagi.tv/',     referer: 'https://live.aryzindagi.tv/' },
+    'm4k8n2p': { name: 'ARY Qtv',      url: 'https://live.aryqtv.tv/',         referer: 'https://live.aryqtv.tv/' },
+    'ahlebait': { name: 'Ahlebait TV', url: 'https://ahlebaittv.net/live-streaming/', referer: 'https://ahlebaittv.net/' }
 };
 
 async function fetchFreshUrl(channelKey) {
@@ -57,10 +57,10 @@ async function fetchFreshUrl(channelKey) {
         page.on('request', (req) => {
             const url = req.url();
             
-            // Ahlebait TV (IBM / Ustream embed matcher)
+            // Ahlebait TV Official Page Matcher
             if (channelKey === 'ahlebait') {
-                if (url.includes('.m3u8') || url.includes('playlist') || url.includes('manifest')) {
-                    if (url.includes('ustream') || url.includes('ibm') || url.includes('video') || url.includes('live')) {
+                if (url.includes('.m3u8') || url.includes('manifest') || url.includes('playlist')) {
+                    if (!m3u8Url) {
                         m3u8Url = url;
                         console.log(`🎯 Ahlebait Stream Captured: ${url}`);
                     }
@@ -78,17 +78,20 @@ async function fetchFreshUrl(channelKey) {
         console.log(`🌐 Navigating to ${channel.url}...`);
         await page.goto(channel.url, { 
             waitUntil: 'domcontentloaded', 
-            timeout: 20000 
+            timeout: 25000 
         });
 
-        // Autoplay trigger
+        // Autoplay trigger & Iframe support
         try {
             await page.evaluate(() => {
                 document.querySelectorAll('video').forEach(v => {
                     v.muted = true;
                     v.play().catch(() => {});
                 });
-                const playBtn = document.querySelector('.vjs-big-play-button') || document.querySelector('[class*="play"]');
+                
+                const playBtn = document.querySelector('.vjs-big-play-button') || 
+                                document.querySelector('[class*="play"]') ||
+                                document.querySelector('iframe');
                 if (playBtn) playBtn.click();
             });
         } catch (e) {}
@@ -187,7 +190,7 @@ app.get('/proxy', async (req, res) => {
     }
 
     const targetUrl = req.query.url;
-    const referer = req.query.referer || 'https://video.ibm.com/';
+    const referer = req.query.referer || 'https://ahlebaittv.net/';
 
     if (!targetUrl) return res.status(400).json({ error: 'url required' });
 
