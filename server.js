@@ -8,10 +8,9 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// 🔐 SECURITY KEY — apni marzi se change karein
+// 🔐 SECURITY KEY
 const SECRET_KEY = 'MUZAMMIL2026ARY';
 
-// ARY Channels
 const CHANNELS = {
     'k7x9p2m': { name: 'ARY News',    url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
     'q3n8z1v': { name: 'ARY News 2',  url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
@@ -31,13 +30,7 @@ async function fetchFreshUrl(channelKey) {
     try {
         browser = await puppeteer.launch({
             headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--single-process'
-            ]
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process']
         });
 
         const page = await browser.newPage();
@@ -78,25 +71,17 @@ async function fetchFreshUrl(channelKey) {
     }
 }
 
-// Home route
 app.get('/', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        message: 'ARY Proxy is running',
-        note: 'Access requires ?key=YOUR_SECRET_KEY'
-    });
+    res.json({ status: 'ok', message: 'ARY Proxy is running' });
 });
 
-// 🎯 Short route with SECURITY KEY: /a8f4h6j.m3u8?key=MUZAMMIL2026ARY
 app.get('/:code', async (req, res, next) => {
     const code = req.params.code.replace(/\.m3u8$/i, '');
     const channel = CHANNELS[code];
     
     if (!channel) return next();
 
-    // 🔐 SECURITY CHECK
     const providedKey = req.query.key;
-    
     if (!providedKey || providedKey !== SECRET_KEY) {
         console.log(`🚫 Unauthorized: ${channel.name}`);
         return res.status(403).json({ 
@@ -109,10 +94,7 @@ app.get('/:code', async (req, res, next) => {
     const channelUrl = await fetchFreshUrl(code);
     
     if (!channelUrl) {
-        return res.status(503).json({ 
-            error: 'Stream temporarily unavailable',
-            channel: channel.name
-        });
+        return res.status(503).json({ error: 'Stream unavailable', channel: channel.name });
     }
 
     try {
@@ -134,7 +116,9 @@ app.get('/:code', async (req, res, next) => {
 
         let text = Buffer.from(response.data).toString('utf-8');
         const baseUrl = channelUrl.substring(0, channelUrl.lastIndexOf('/') + 1);
-        const proxyBase = `${req.protocol}://${req.get('host')}/proxy`;
+        
+        // 🔥 HTTPS HARDCODED — mixed content fix
+        const proxyBase = `https://${req.get('host')}/proxy`;
 
         text = text.split('\n').map(line => {
             const trimmed = line.trim();
@@ -155,10 +139,8 @@ app.get('/:code', async (req, res, next) => {
     }
 });
 
-// Generic proxy route (segments ke liye — key optional)
 app.get('/proxy', async (req, res) => {
     const providedKey = req.query.key;
-    
     if (providedKey && providedKey !== SECRET_KEY) {
         return res.status(403).json({ error: 'Forbidden' });
     }
@@ -190,7 +172,9 @@ app.get('/proxy', async (req, res) => {
         if (targetUrl.includes('.m3u8') || contentType.includes('mpegurl')) {
             let text = Buffer.from(data).toString('utf-8');
             const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-            const proxyBase = `${req.protocol}://${req.get('host')}/proxy`;
+            
+            // 🔥 HTTPS HARDCODED
+            const proxyBase = `https://${req.get('host')}/proxy`;
 
             text = text.split('\n').map(line => {
                 const trimmed = line.trim();
@@ -216,6 +200,6 @@ app.get('/proxy', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`✅ ARY Proxy running on port ${PORT}`);
-    console.log(`🔐 Security key required: ${SECRET_KEY}`);
-    console.log(`📡 Real-time Puppeteer mode`);
+    console.log(`🔐 Security key: ${SECRET_KEY}`);
+    console.log(`🔒 HTTPS enforced for segments`);
 });
