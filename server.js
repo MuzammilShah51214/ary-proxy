@@ -9,8 +9,9 @@ app.use(cors());
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = 'MUZAMMIL2026ARY';
 
+// Stream cache in-memory (Expiry: 15 mins for dynamic links)
 const streamCache = {}; 
-const CACHE_TTL = 15 * 60 * 1000; // 15 mins (Tamasha links expire fast)
+const CACHE_TTL = 15 * 60 * 1000; 
 
 const CHANNELS = {
     'k7x9p2m': { name: 'ARY News',    url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
@@ -19,7 +20,6 @@ const CHANNELS = {
     'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/', referer: 'https://live.arydigital.tv/' },
     'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/', referer: 'https://live.aryzindagi.tv/' },
     'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' },
-    // Naya Tamasha Channel:
     'tvtoday': { name: 'TV Today',    url: 'https://tamashaweb.com/live-tv?channel=tv-today', referer: 'https://tamashaweb.com/' }
 };
 
@@ -27,13 +27,14 @@ async function fetchFreshUrl(channelKey) {
     const channel = CHANNELS[channelKey];
     if (!channel) return null;
 
+    // Cache Check
     const cached = streamCache[channelKey];
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-        console.log(`⚡ [CACHE HIT] Loading ${channel.name}`);
+        console.log(`⚡ [CACHE HIT] Direct loading for ${channel.name}`);
         return cached.url;
     }
 
-    console.log(`🔍 Fetching stream for ${channel.name}...`);
+    console.log(`🔍 Fetching stream URL for ${channel.name}...`);
 
     let browser;
     try {
@@ -55,36 +56,49 @@ async function fetchFreshUrl(channelKey) {
 
         page.on('request', (req) => {
             const url = req.url();
-            // Tamasha ke stream links `.m3u8` ya `.mpd` dono format mein ho sakte hain
-            if (url.includes('.m3u8') || url.includes('index') || url.includes('master')) {
-                if (url.includes('stream') || url.includes('hls') || url.includes('.m3u8')) {
-                    if (!m3u8Url) {
+            
+            // Tamasha Web Special Token Links (chunks.m3u8, wmsAuthSign)
+            if (channelKey === 'tvtoday') {
+                if (url.includes('chunks.m3u8') || url.includes('wmsAuthSign') || (url.includes('.m3u8') && url.includes('tamashaweb'))) {
+                    m3u8Url = url;
+                    console.log(`🎯 Tamasha URL Captured: ${url}`);
+                }
+            } else {
+                // ARY Channels
+                if (url.includes('.m3u8')) {
+                    if (!m3u8Url || url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
                         m3u8Url = url;
                     }
                 }
             }
         });
 
+        console.log(`🌐 Navigating to ${channel.url}...`);
         await page.goto(channel.url, { 
-            waitUntil: 'networkidle2', 
-            timeout: 25000 
+            waitUntil: 'domcontentloaded', 
+            timeout: 20000 
         });
 
-        // Tamasha player par autostart trigger karne ke liye click action
+        // Trigger autoplay/clicks if required
         try {
             await page.evaluate(() => {
-                const playBtn = document.querySelector('.vjs-big-play-button') || document.querySelector('video');
+                document.querySelectorAll('video').forEach(v => {
+                    v.muted = true;
+                    v.play().catch(() => {});
+                });
+                const playBtn = document.querySelector('.vjs-big-play-button') || document.querySelector('[class*="play"]');
                 if (playBtn) playBtn.click();
             });
         } catch (e) {}
 
+        // Wait up to 10 seconds for stream request to fire
         for (let i = 0; i < 10; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (m3u8Url) break;
         }
 
         if (m3u8Url) {
-            console.log(`✅ ${channel.name} Stream URL Found: ${m3u8Url.substring(0, 80)}...`);
+            console.log(`✅ Success URL: ${m3u8Url.substring(0, 90)}...`);
             streamCache[channelKey] = {
                 url: m3u8Url,
                 timestamp: Date.now()
@@ -104,7 +118,7 @@ async function fetchFreshUrl(channelKey) {
 }
 
 app.get('/', (req, res) => {
-    res.json({ status: 'ok', message: 'Proxy Running' });
+    res.json({ status: 'ok', message: 'ARY & Tamasha Proxy Running Fast' });
 });
 
 app.get('/:code', async (req, res, next) => {
@@ -158,7 +172,7 @@ app.get('/:code', async (req, res, next) => {
 
         res.send(text);
     } catch (err) {
-        console.error(`❌ Proxy error: ${err.message}`);
+        console.error(`❌ Main Proxy error: ${err.message}`);
         delete streamCache[code];
         res.status(500).json({ error: err.message });
     }
@@ -215,7 +229,7 @@ app.get('/proxy', async (req, res) => {
 
         res.send(data);
     } catch (err) {
-        console.error('Proxy error:', err.message);
+        console.error('Sub Proxy error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
