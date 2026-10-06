@@ -1,4 +1,4 @@
-// Global SSL strictness disable karein (Expired SSL Bypass ke liye)
+// Global SSL strictness disable (Expired SSL Bypass ke liye)
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const express = require('express');
@@ -26,7 +26,7 @@ const CHANNELS = {
     'q3n8z1v': { name: 'ARY News 2',  url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
     'w5r2y9t': { name: 'ARY Musik',   url: 'https://live.arymusik.tv/',   referer: 'https://live.arymusik.tv/' },
     'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/', referer: 'https://live.arydigital.tv/' },
-    'b2c7d9e': { name: 'ARY Zindagi', url: 'https://live.aryzindagi.tv/', referer: 'https://live.aryzindagi.tv/' },
+    'b2c7d9e': { name: 'ARY Zindagi', url: 'https://aryplus.tv/live/v2/6613cb5a4753ce45bad667a5', referer: 'https://aryplus.tv/' },
     'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' }
 };
 
