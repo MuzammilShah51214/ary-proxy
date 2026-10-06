@@ -1,8 +1,11 @@
+// Global SSL strictness disable karein (Expired SSL Bypass ke liye)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const puppeteer = require('puppeteer');
-const https = require('https'); // SSL Agent ke liye
+const https = require('https');
 
 const app = express();
 app.use(cors());
@@ -10,12 +13,11 @@ app.use(cors());
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = 'MUZAMMIL2026ARY';
 
-// Expired SSL certificates ko ignore karne ke liye Custom HTTPS Agent
 const httpsAgent = new https.Agent({
     rejectUnauthorized: false
 });
 
-// Stream URLs cache karne ke liye (Expiry: 30 mins)
+// Stream cache in-memory (Expiry: 30 mins)
 const streamCache = {}; 
 const CACHE_TTL = 30 * 60 * 1000; 
 
@@ -32,7 +34,6 @@ async function fetchFreshUrl(channelKey) {
     const channel = CHANNELS[channelKey];
     if (!channel) return null;
 
-    // Check if valid cached URL exists
     const cached = streamCache[channelKey];
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
         console.log(`⚡ [CACHE HIT] Fast loading for ${channel.name}`);
@@ -51,7 +52,8 @@ async function fetchFreshUrl(channelKey) {
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--disable-web-security',
-                '--ignore-certificate-errors' // Puppeteer mein expired SSL ignore karne ke liye
+                '--ignore-certificate-errors',
+                '--ignore-certificate-errors-spki-list'
             ]
         });
 
@@ -145,7 +147,7 @@ app.get('/:code', async (req, res, next) => {
 
     try {
         const response = await axios.get(channelUrl, {
-            httpsAgent: httpsAgent, // Expired SSL bypass added
+            httpsAgent: httpsAgent,
             headers: {
                 'Referer': channel.referer,
                 'Origin': new URL(channel.referer).origin,
@@ -198,7 +200,7 @@ app.get('/proxy', async (req, res) => {
 
     try {
         const response = await axios.get(targetUrl, {
-            httpsAgent: httpsAgent, // Expired SSL bypass added
+            httpsAgent: httpsAgent,
             headers: {
                 'Referer': referer,
                 'Origin': new URL(referer).origin,
@@ -238,7 +240,7 @@ app.get('/proxy', async (req, res) => {
 
         res.send(data);
     } catch (err) {
-        console.error('Sub Proxy error:', err.message);
+        console.error('Proxy error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
