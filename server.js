@@ -2,12 +2,18 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const puppeteer = require('puppeteer');
+const https = require('https'); // SSL Agent ke liye
 
 const app = express();
 app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = 'MUZAMMIL2026ARY';
+
+// Expired SSL certificates ko ignore karne ke liye Custom HTTPS Agent
+const httpsAgent = new https.Agent({
+    rejectUnauthorized: false
+});
 
 // Stream URLs cache karne ke liye (Expiry: 30 mins)
 const streamCache = {}; 
@@ -44,14 +50,14 @@ async function fetchFreshUrl(channelKey) {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--disable-web-security'
+                '--disable-web-security',
+                '--ignore-certificate-errors' // Puppeteer mein expired SSL ignore karne ke liye
             ]
         });
 
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-        // FIXED: Only block unnecessary static assets, DO NOT block 'media'
         await page.setRequestInterception(true);
         page.on('request', (req) => {
             const resourceType = req.resourceType();
@@ -79,7 +85,6 @@ async function fetchFreshUrl(channelKey) {
             timeout: 20000 
         });
 
-        // Autoplay trigger so stream request gets fired immediately
         try {
             await page.evaluate(() => {
                 document.querySelectorAll('video').forEach(v => {
@@ -89,7 +94,6 @@ async function fetchFreshUrl(channelKey) {
             });
         } catch (e) {}
 
-        // Maximum 10 seconds wait time for m3u8 capture
         for (let i = 0; i < 10; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (m3u8Url) break;
@@ -141,6 +145,7 @@ app.get('/:code', async (req, res, next) => {
 
     try {
         const response = await axios.get(channelUrl, {
+            httpsAgent: httpsAgent, // Expired SSL bypass added
             headers: {
                 'Referer': channel.referer,
                 'Origin': new URL(channel.referer).origin,
@@ -174,7 +179,7 @@ app.get('/:code', async (req, res, next) => {
 
         res.send(text);
     } catch (err) {
-        console.error(`❌ Proxy error: ${err.message}`);
+        console.error(`❌ Main Proxy error: ${err.message}`);
         delete streamCache[code];
         res.status(500).json({ error: err.message });
     }
@@ -193,6 +198,7 @@ app.get('/proxy', async (req, res) => {
 
     try {
         const response = await axios.get(targetUrl, {
+            httpsAgent: httpsAgent, // Expired SSL bypass added
             headers: {
                 'Referer': referer,
                 'Origin': new URL(referer).origin,
@@ -232,7 +238,7 @@ app.get('/proxy', async (req, res) => {
 
         res.send(data);
     } catch (err) {
-        console.error('Proxy error:', err.message);
+        console.error('Sub Proxy error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
