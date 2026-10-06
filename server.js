@@ -49,13 +49,13 @@ async function fetchFreshUrl(channelKey) {
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-        // OPTIMIZATION: Images, Stylesheets aur Fonts block karke page fast load karein
+        // FIXED: Only block unnecessary static assets, DO NOT block 'media'
         await page.setRequestInterception(true);
         page.on('request', (req) => {
             const resourceType = req.resourceType();
-            if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+            if (['image', 'stylesheet', 'font'].includes(resourceType)) {
                 req.abort();
             } else {
                 req.continue();
@@ -69,24 +69,34 @@ async function fetchFreshUrl(channelKey) {
             if (url.includes('.m3u8')) {
                 if (!m3u8Url || url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
                     m3u8Url = url;
+                    console.log(`🎯 Stream Intercepted: ${url.substring(0, 70)}...`);
                 }
             }
         });
 
         await page.goto(channel.url, { 
             waitUntil: 'domcontentloaded', 
-            timeout: 15000 
+            timeout: 20000 
         });
 
-        // Maximum 8 seconds wait time
-        for (let i = 0; i < 8; i++) {
+        // Autoplay trigger so stream request gets fired immediately
+        try {
+            await page.evaluate(() => {
+                document.querySelectorAll('video').forEach(v => {
+                    v.muted = true;
+                    v.play().catch(() => {});
+                });
+            });
+        } catch (e) {}
+
+        // Maximum 10 seconds wait time for m3u8 capture
+        for (let i = 0; i < 10; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (m3u8Url) break;
         }
 
         if (m3u8Url) {
             console.log(`✅ Fresh URL Captured: ${m3u8Url.substring(0, 80)}...`);
-            // Cache in memory
             streamCache[channelKey] = {
                 url: m3u8Url,
                 timestamp: Date.now()
@@ -134,7 +144,7 @@ app.get('/:code', async (req, res, next) => {
             headers: {
                 'Referer': channel.referer,
                 'Origin': new URL(channel.referer).origin,
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': '*/*'
             },
             responseType: 'arraybuffer',
@@ -165,7 +175,6 @@ app.get('/:code', async (req, res, next) => {
         res.send(text);
     } catch (err) {
         console.error(`❌ Proxy error: ${err.message}`);
-        // Clear cache if stream fails
         delete streamCache[code];
         res.status(500).json({ error: err.message });
     }
