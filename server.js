@@ -1,10 +1,9 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const FormData = require('form-data'); // ✅ FormData import kiya
 
 const app = express();
-
-// CORS enable karein
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -13,27 +12,29 @@ const PORT = process.env.PORT || 8080;
 
 app.post('/proxy', async (req, res) => {
   try {
-    console.log("Frontend Request:", req.body); // Railway logs mein dikhega
+    console.log("Frontend Request:", req.body);
 
-    // JazzTV API ko request bhejein
+    // ✅ FormData banaya
+    const formData = new FormData();
+    formData.append('channel_id', req.body.channel_id);
+    formData.append('platform', 'web');
+
     const response = await axios({
       method: 'post',
       url: 'https://web.jazztv.pk/alpha/api_gateway/v6/web/get-channel-url',
       headers: {
         'Authorization': req.headers['authorization'] || '', 
-        'Accept': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
         'platform': 'web',
-        // ✅ YEH HEADERS JAZZTV API KE LIYE BOHT ZAROORI HAIN
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Origin': 'https://jazztv.pk',
-        'Referer': 'https://jazztv.pk/'
+        'Origin': 'https://tamashaweb.com', // ✅ Naya Origin
+        'Referer': 'https://tamashaweb.com/', // ✅ Naya Referer
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36',
+        ...formData.getHeaders() // ✅ FormData headers
       },
-      data: req.body 
+      data: formData 
     });
     
     console.log("JazzTV API Response:", response.data);
-
-    // Frontend ko response bhej dein
     res.json(response.data);
     
   } catch (error) {
@@ -42,10 +43,5 @@ app.post('/proxy', async (req, res) => {
   }
 });
 
-app.get('/', (req, res) => {
-    res.send('JazzTV Proxy is running perfectly!');
-});
-
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+app.get('/', (req, res) => { res.send('JazzTV Proxy is running perfectly!'); });
+app.listen(PORT, () => { console.log(`Server is running on port ${PORT}`); });
