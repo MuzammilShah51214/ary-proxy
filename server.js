@@ -1,250 +1,52 @@
-// Global SSL strictness disable (Expired SSL Bypass ke liye)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 const express = require('express');
-const cors = require('cors');
 const axios = require('axios');
-const puppeteer = require('puppeteer');
-const https = require('https');
+const cors = require('cors');
 
 const app = express();
+
+// CORS enable karein taake aapki HTML file bina kisi rok-tok ke is server se baat kar sake
 app.use(cors());
 
+// JSON data aur URL-encoded data dono ko accept karne ke liye
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Railway apna port khud assign karta hai, isliye process.env.PORT use karna zaroori hai
 const PORT = process.env.PORT || 3000;
-const SECRET_KEY = 'MUZAMMIL2026ARY';
 
-const httpsAgent = new https.Agent({
-    rejectUnauthorized: false
+// Yeh aapka main proxy endpoint hai
+app.post('/proxy', async (req, res) => {
+  try {
+    // JazzTV ki asli API ko call kar rahe hain
+    const response = await axios({
+      method: 'post',
+      url: 'https://web.jazztv.pk/alpha/api_gateway/v6/web/get-channel-url',
+      headers: {
+        // Token aapki HTML file se aayega
+        'Authorization': req.headers['authorization'] || '', 
+        'Accept': 'application/json',
+        'platform': 'web'
+      },
+      // HTML se aane wala data (channel_id aur platform) as it is bhej rahe hain
+      data: req.body 
+    });
+    
+    // API ka jo jawab aaya, usko wapis HTML file ko bhej dein
+    res.json(response.data);
+    
+  } catch (error) {
+    // Agar koi error aaye toh console mein print karein
+    console.error("API Error:", error.response ? error.response.data : error.message);
+    res.status(500).json({ error: 'Proxy request failed' });
+  }
 });
 
-// Stream cache in-memory (Expiry: 30 mins)
-const streamCache = {}; 
-const CACHE_TTL = 30 * 60 * 1000; 
-
-const CHANNELS = {
-    'k7x9p2m': { name: 'ARY News',    url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
-    'q3n8z1v': { name: 'ARY News 2',  url: 'https://live.arynews.tv/',    referer: 'https://live.arynews.tv/' },
-    'w5r2y9t': { name: 'ARY Musik',   url: 'https://live.arymusik.tv/',   referer: 'https://live.arymusik.tv/' },
-    'a8f4h6j': { name: 'ARY Digital', url: 'https://live.arydigital.tv/', referer: 'https://live.arydigital.tv/' },
-    'b2c7d9e': { name: 'ARY Zindagi', url: 'https://aryplus.tv/live/v2/6613cb5a4753ce45bad667a5', referer: 'https://aryplus.tv/' },
-    'm4k8n2p': { name: 'ARY Qtv',     url: 'https://live.aryqtv.tv/',     referer: 'https://live.aryqtv.tv/' }
-};
-
-async function fetchFreshUrl(channelKey) {
-    const channel = CHANNELS[channelKey];
-    if (!channel) return null;
-
-    const cached = streamCache[channelKey];
-    if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-        console.log(`⚡ [CACHE HIT] Fast loading for ${channel.name}`);
-        return cached.url;
-    }
-
-    console.log(`🔍 Fetching fresh URL via Puppeteer for ${channel.name}...`);
-
-    let browser;
-    try {
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-web-security',
-                '--ignore-certificate-errors',
-                '--ignore-certificate-errors-spki-list'
-            ]
-        });
-
-        const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
-
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
-            const resourceType = req.resourceType();
-            if (['image', 'stylesheet', 'font'].includes(resourceType)) {
-                req.abort();
-            } else {
-                req.continue();
-            }
-        });
-
-        let m3u8Url = null;
-
-        page.on('request', (req) => {
-            const url = req.url();
-            if (url.includes('.m3u8')) {
-                if (!m3u8Url || url.includes('main.m3u8') || url.includes('playlist.m3u8') || url.includes('master.m3u8')) {
-                    m3u8Url = url;
-                    console.log(`🎯 Stream Intercepted: ${url.substring(0, 70)}...`);
-                }
-            }
-        });
-
-        await page.goto(channel.url, { 
-            waitUntil: 'domcontentloaded', 
-            timeout: 20000 
-        });
-
-        try {
-            await page.evaluate(() => {
-                document.querySelectorAll('video').forEach(v => {
-                    v.muted = true;
-                    v.play().catch(() => {});
-                });
-            });
-        } catch (e) {}
-
-        for (let i = 0; i < 10; i++) {
-            await new Promise(r => setTimeout(r, 1000));
-            if (m3u8Url) break;
-        }
-
-        if (m3u8Url) {
-            console.log(`✅ Fresh URL Captured: ${m3u8Url.substring(0, 80)}...`);
-            streamCache[channelKey] = {
-                url: m3u8Url,
-                timestamp: Date.now()
-            };
-            return m3u8Url;
-        } else {
-            console.log(`❌ No m3u8 URL found for ${channel.name}`);
-            return null;
-        }
-
-    } catch (err) {
-        console.error(`❌ Browser Error: ${err.message}`);
-        return null;
-    } finally {
-        if (browser) await browser.close();
-    }
-}
-
+// Ek basic test route taake pata chale server zinda hai
 app.get('/', (req, res) => {
-    res.json({ status: 'ok', message: 'ARY Proxy running fast' });
+    res.send('JazzTV Proxy is running perfectly!');
 });
 
-app.get('/:code', async (req, res, next) => {
-    const code = req.params.code.replace(/\.m3u8$/i, '');
-    const channel = CHANNELS[code];
-    
-    if (!channel) return next();
-
-    const providedKey = req.query.key;
-    if (!providedKey || providedKey !== SECRET_KEY) {
-        return res.status(403).json({ error: 'Forbidden' });
-    }
-
-    const channelUrl = await fetchFreshUrl(code);
-    
-    if (!channelUrl) {
-        return res.status(503).json({ 
-            error: 'Stream unavailable',
-            channel: channel.name
-        });
-    }
-
-    try {
-        const response = await axios.get(channelUrl, {
-            httpsAgent: httpsAgent,
-            headers: {
-                'Referer': channel.referer,
-                'Origin': new URL(channel.referer).origin,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': '*/*'
-            },
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            maxRedirects: 5
-        });
-
-        const contentType = response.headers['content-type'] || 'application/vnd.apple.mpegurl';
-        res.set('Content-Type', contentType);
-        res.set('Access-Control-Allow-Origin', '*');
-
-        let text = Buffer.from(response.data).toString('utf-8');
-        const baseUrl = channelUrl.substring(0, channelUrl.lastIndexOf('/') + 1);
-        const proxyBase = `https://${req.get('host')}/proxy`;
-
-        text = text.split('\n').map(line => {
-            const trimmed = line.trim();
-            if (trimmed && !trimmed.startsWith('#')) {
-                const fullUrl = trimmed.startsWith('http') ? trimmed : baseUrl + trimmed;
-                return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}&key=${SECRET_KEY}`;
-            }
-            return line.replace(/URI="([^"]+)"/g, (match, uri) => {
-                const fullUrl = uri.startsWith('http') ? uri : baseUrl + uri;
-                return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(channel.referer)}&key=${SECRET_KEY}"`;
-            });
-        }).join('\n');
-
-        res.send(text);
-    } catch (err) {
-        console.error(`❌ Main Proxy error: ${err.message}`);
-        delete streamCache[code];
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get('/proxy', async (req, res) => {
-    const providedKey = req.query.key;
-    if (providedKey && providedKey !== SECRET_KEY) {
-        return res.status(403).json({ error: 'Forbidden' });
-    }
-
-    const targetUrl = req.query.url;
-    const referer = req.query.referer || 'https://live.arynews.tv/';
-
-    if (!targetUrl) return res.status(400).json({ error: 'url required' });
-
-    try {
-        const response = await axios.get(targetUrl, {
-            httpsAgent: httpsAgent,
-            headers: {
-                'Referer': referer,
-                'Origin': new URL(referer).origin,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': '*/*'
-            },
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            maxRedirects: 5
-        });
-
-        const contentType = response.headers['content-type'] || 'application/octet-stream';
-        res.set('Content-Type', contentType);
-        res.set('Access-Control-Allow-Origin', '*');
-
-        let data = response.data;
-
-        if (targetUrl.includes('.m3u8') || contentType.includes('mpegurl')) {
-            let text = Buffer.from(data).toString('utf-8');
-            const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-            const proxyBase = `https://${req.get('host')}/proxy`;
-
-            text = text.split('\n').map(line => {
-                const trimmed = line.trim();
-                if (trimmed && !trimmed.startsWith('#')) {
-                    const fullUrl = trimmed.startsWith('http') ? trimmed : baseUrl + trimmed;
-                    return `${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}&key=${SECRET_KEY}`;
-                }
-                return line.replace(/URI="([^"]+)"/g, (match, uri) => {
-                    const fullUrl = uri.startsWith('http') ? uri : baseUrl + uri;
-                    return `URI="${proxyBase}?url=${encodeURIComponent(fullUrl)}&referer=${encodeURIComponent(referer)}&key=${SECRET_KEY}"`;
-                });
-            }).join('\n');
-
-            return res.send(text);
-        }
-
-        res.send(data);
-    } catch (err) {
-        console.error('Proxy error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
+// Server start karein
 app.listen(PORT, () => {
-    console.log(`✅ ARY Proxy running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
