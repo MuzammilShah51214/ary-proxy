@@ -1,48 +1,37 @@
 const express = require('express');
-const axios = require('axios');
 const cors = require('cors');
-const FormData = require('form-data');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-const PORT = process.env.PORT || 8080;
+const API = 'https://cdn2.mjunoon.tv:9191/v2/embed-player-url';
 
-app.post('/proxy', async (req, res) => {
+app.post('/api/stream', async (req, res) => {
   try {
-    console.log("Frontend Request:", req.body);
+    const params = new URLSearchParams(req.body).toString();
 
-    // ✅ API multipart/form-data maang rahi hai
-    const form = new FormData();
-    form.append('channel_id', req.body.channel_id);
-    form.append('platform', 'web');
-
-    const response = await axios({
-      method: 'post',
-      url: 'https://web.jazztv.pk/alpha/api_gateway/v6/web/get-channel-url',
+    const r = await fetch(API, {
+      method: 'POST',
       headers: {
-        'Authorization': req.headers['authorization'] || '', 
-        'Accept': 'application/json, text/plain, */*',
-        'platform': 'web',
-        // ✅ Aapki file ke mutabiq exact headers
-        'Origin': 'https://tamashaweb.com',
-        'Referer': 'https://tamashaweb.com/',
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36',
-        ...form.getHeaders()
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': 'https://mjunoon.tv/',
+        'Origin':  'https://mjunoon.tv',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
       },
-      data: form 
+      body: params
     });
-    
-    console.log("JazzTV API Response:", response.data);
-    res.json(response.data);
-    
-  } catch (error) {
-    console.error("Proxy Error:", error.response ? error.response.data : error.message);
-    res.status(500).json({ error: 'Proxy request failed', details: error.message });
+
+    const text = await r.text();
+    res.status(r.status).type('application/json').send(text);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'proxy_failed', message: err.message });
   }
 });
 
-app.get('/', (req, res) => { res.send('JazzTV Proxy is running perfectly!'); });
-app.listen(PORT, () => { console.log(`Server is running on port ${PORT}`); });
+app.get('/', (req, res) => res.send('Mjunoon proxy is running ✅'));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log('Proxy on port ' + PORT));
