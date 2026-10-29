@@ -26,11 +26,11 @@
 <body>
 <div class="player-wrap">
   <video id="video" controls autoplay muted playsinline></video>
-  <div class="controls">
-    <!-- Ab aap yahan channel aur quality type kar sakte hain -->
-    <input type="text" id="channelInput" value="tv-one-live" placeholder="Channel ID (e.g. tv-one-live)">
-    <input type="text" id="qualityInput" value="hd" placeholder="Quality (e.g. hd, sd, live)">
-    <button id="loadBtn" onclick="loadStream()">▶ Load Stream</button>
+  
+  <div class="controls" style="margin-top: 15px;">
+    <input type="text" id="channelInput" value="Madni-121" placeholder="Channel ID">
+    <input type="text" id="qualityInput" value="121H" placeholder="Quality">
+    <button id="loadBtn" onclick="loadStream()">▶ Play via API</button>
   </div>
   <div class="status" id="status">Idle</div>
 </div>
@@ -47,16 +47,11 @@ function setStatus(msg, cls='') {
 }
 
 async function loadStream() {
-  const channel = document.getElementById('channelInput').value;
-  const quality = document.getElementById('qualityInput').value;
+  const channel = document.getElementById('channelInput').value.trim();
+  const quality = document.getElementById('qualityInput').value.trim();
   
-  if(!channel || !quality) {
-    setStatus('❌ Channel aur Quality dono likhein', 'err');
-    return;
-  }
-
   loadBtn.disabled = true;
-  setStatus('Fetching stream URL from server...');
+  setStatus('API se stream URL mangwaya ja raha hai...');
   
   try {
     const response = await fetch('/api/stream', {
@@ -66,12 +61,24 @@ async function loadStream() {
     });
     
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Server error');
+    console.log("API Response:", data); // Debugging ke liye
 
-    const url = data.url || data.streaming_url || data.hls_url || data?.data?.url || data?.data?.streaming_url;
-    if (!url) throw new Error('No URL found in response. Channel/Quality galat ho sakti hai.');
+    // API response mein URL dhoondein (kisi bhi key mein ho sakta hai)
+    let streamUrl = null;
+    if (data.url) streamUrl = data.url;
+    else if (data.streaming_url) streamUrl = data.streaming_url;
+    else if (data.hls_url) streamUrl = data.hls_url;
+    else if (data.data && data.data.url) streamUrl = data.data.url;
+    else if (data.data && data.data.streaming_url) streamUrl = data.data.streaming_url;
+    else if (typeof data === 'string' && data.includes('http')) streamUrl = data;
+
+    if (!streamUrl) {
+      // Agar API ne koi URL nahi diya, toh error show karein
+      throw new Error('API ne URL nahi diya. Server response: ' + JSON.stringify(data).slice(0, 100));
+    }
     
-    playHLS(url);
+    playHLS(streamUrl);
+    
   } catch (err) {
     setStatus('❌ ' + err.message, 'err');
   } finally {
@@ -83,7 +90,7 @@ function playHLS(url) {
   if (hls) { hls.destroy(); hls = null; }
   
   const proxiedUrl = '/proxy?url=' + encodeURIComponent(url);
-  setStatus('Loading Stream...');
+  setStatus('Video load ho rahi hai...');
   
   if (Hls.isSupported()) {
     hls = new Hls({ lowLatencyMode: true, enableWorker: true });
@@ -91,10 +98,10 @@ function playHLS(url) {
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       video.play().catch(()=>{});
-      setStatus('🟢 LIVE', 'live');
+      setStatus('🟢 LIVE - API se chal raha hai!', 'live');
     });
     hls.on(Hls.Events.ERROR, (e, data) => {
-      if (data.fatal) setStatus('❌ Error: ' + data.details, 'err');
+      if (data.fatal) setStatus('❌ Player Error: ' + data.details, 'err');
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = proxiedUrl;
