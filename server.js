@@ -51,7 +51,7 @@ app.post('/api/stream', async (req, res) => {
   try {
     const token = await getToken();
     
-    // Hum API ko call kar rahe hain taake naya security token mile
+    // API ko call kar rahe hain taake naya security token (eData) mile
     const response = await fetch(`${CONFIG.API_BASE}/streaming-url`, {
       method: 'POST',
       headers: { ...HEADERS, 'Authorization': `Bearer ${token}` },
@@ -60,10 +60,21 @@ app.post('/api/stream', async (req, res) => {
     
     const data = await response.json();
     
-    // Agar API ne encrypted data (eData) bheja hai, toh hum khud link bana lenge
-    if (data.eData || data.data?.eData) {
-        // Hum direct link bana rahe hain jisme aapne jo quality aur channel dala hai
-        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/chunks.m3u8?wmsAuthSign=${data.eData || data.data.eData}`;
+    // API se eData (token) nikal rahe hain
+    const authToken = data.eData || data.data?.eData || data.token;
+    
+    if (authToken) {
+        // Hum link khud bana rahe hain aapke diye hue format ke mutabiq (playlist.m3u8)
+        let finalUrl = "";
+        
+        if (quality && quality.trim() !== "") {
+            // Agar quality di hai (jaise 121H)
+            finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/${quality}/playlist.m3u8?wmsAuthSign=${authToken}`;
+        } else {
+            // Agar quality khali hai
+            finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/playlist.m3u8?wmsAuthSign=${authToken}`;
+        }
+        
         return res.json({ success: true, url: finalUrl });
     }
     
@@ -74,7 +85,7 @@ app.post('/api/stream', async (req, res) => {
   }
 });
 
-// Proxy waisa hi rahega
+// Proxy
 app.get('/proxy', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).send('url required');
