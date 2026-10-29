@@ -68,12 +68,8 @@ async function loadStream() {
     if (!streamUrl) {
       throw new Error('API ne URL nahi diya.');
     }
-
-    // 🔥 AUTO-FIX: Agar link mein chunks.m3u8 hai, toh usko playlist.m3u8 kar do
-    if (streamUrl.includes('chunks.m3u8')) {
-        streamUrl = streamUrl.replace('chunks.m3u8', 'playlist.m3u8');
-    }
     
+    // Ab link ke sath koi chher chhar nahi hogi, jo server.js dega wohi chalega
     playHLS(streamUrl);
     
   } catch (err) {
