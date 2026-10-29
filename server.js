@@ -9,12 +9,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middlewares
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Base URL for Mjunoon API
 const API_BASE = 'https://cdn2.mjunoon.tv:9191/v2';
 
+// 1. API Headers (Login aur Stream URL lene ke liye)
 const API_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36',
   'Accept': 'application/json, text/plain, */*',
@@ -23,6 +26,7 @@ const API_HEADERS = {
   'Referer': 'https://www.mjunoon.tv/',
 };
 
+// 2. Stream Headers (Cookies ke sath taake CDN block na kare)
 const STREAM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36',
   'Accept': '*/*',
@@ -34,14 +38,18 @@ const STREAM_HEADERS = {
 
 let tokenCache = { token: null, expiresAt: 0 };
 
+// Function: Guest Token fetch karna (Cache system ke sath)
 async function getToken() {
-  if (tokenCache.token && Date.now() < tokenCache.expiresAt - 60000) return tokenCache.token;
+  if (tokenCache.token && Date.now() < tokenCache.expiresAt - 60000) {
+    return tokenCache.token;
+  }
   
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: API_HEADERS,
     body: JSON.stringify({ email: "guest@mjunoon.tv", password: "123456", device_id: "web", guest: true }),
   });
+  
   const data = await res.json();
   const token = data.token || data.access_token || data?.data?.token;
   
@@ -49,12 +57,13 @@ async function getToken() {
     tokenCache = { token, expiresAt: Date.now() + 3500000 };
     return token;
   }
-  throw new Error('Token fail');
+  throw new Error('Token generation failed');
 }
 
-// API Route: Stream URL generate karna with Debugging
+// Route 1: Stream URL Generate karna (/api/stream)
 app.post('/api/stream', async (req, res) => {
   const { channel, quality } = req.body;
+  
   if (!channel || !quality) {
     return res.status(400).json({ success: false, error: 'Channel and quality are required' });
   }
@@ -62,7 +71,7 @@ app.post('/api/stream', async (req, res) => {
   try {
     const token = await getToken();
     
-    console.log(`Fetching stream for Channel: ${channel}, Quality: ${quality}`);
+    console.log(`[STREAM REQ] Channel: ${channel}, Quality: ${quality}`);
     
     const response = await fetch(`${API_BASE}/streaming-url`, {
       method: 'POST',
@@ -71,10 +80,10 @@ app.post('/api/stream', async (req, res) => {
     });
     
     const data = await response.json();
-    console.log("Upstream API Response:", JSON.stringify(data)); // Vercel logs mein check karne ke liye
+    console.log("[MJUNOON API RESPONSE]:", JSON.stringify(data));
     
-    // Sabhi possible keys check kar rahe hain jahan eData ya URL ho sakta hai
-    const authToken = data.eData || data.data?.eData || data.token || data.data?.token;
+    // Alag-alag formats check kar rahe hain jo API return kar sakti hai
+    const authToken = data.eData || data.data?.eData || data.token || data.data?.token || data.result;
     const directUrl = data.url || data.data?.url || data.stream_url;
     
     if (directUrl) {
@@ -86,51 +95,64 @@ app.post('/api/stream', async (req, res) => {
       return res.json({ success: true, url: finalUrl });
     }
     
-    // Agar koi bhi token/url na mile to upstream ka error ya data wapas bhejiye
-    return res.json({ success: false, error: 'API did not return a valid token/URL', raw: data });
+    // Agar koi token ya URL na mile to raw data ke sath error bhejien
+    return res.status(400).json({ 
+      success: false, 
+      error: 'API ne valid token ya URL nahi diya.', 
+      rawResponse: data 
+    });
+    
   } catch (e) {
-    console.error("Stream API Error:", e.message);
+    console.error("[SERVER ERROR]:", e.message);
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
-// Proxy Route
+// Route 2: Proxy for CORS bypass & M3U8/TS Chunks handling
 app.get('/proxy', async (req, res) => {
   const url = req.query.url;
-  if (!url) return res.status(400).send('url required');
+  if (!url) return res.status(400).send('URL required');
   
   try {
     const upstream = await fetch(url, { headers: STREAM_HEADERS });
 
     if (!upstream.ok) {
-      return res.status(upstream.status).send('upstream error: ' + upstream.status);
+      return res.status(upstream.status).send('Upstream error: ' + upstream.status);
     }
     
     const contentType = upstream.headers.get('content-type') || '';
     
+    // Agar playlist (.m3u8) hai toh links ko rewrite karo
     if (url.includes('.m3u8') || contentType.includes('mpegurl')) {
       const base = url.substring(0, url.lastIndexOf('/') + 1);
       let text = await upstream.text();
+      
       text = text.split('\n').map(line => {
         const t = line.trim();
         if (!t || t.startsWith('#')) return line;
         return `/proxy?url=${encodeURIComponent(t.startsWith('http') ? t : new URL(t, base).href)}`;
       }).join('\n');
+      
       res.set('Content-Type', 'application/vnd.apple.mpegurl'); 
       return res.send(text);
     }
     
+    // Video chunks (.ts) ke liye stream pipe karo
     res.set('Content-Type', contentType || 'video/mp2t');
     const nodeStream = Readable.fromWeb(upstream.body);
     nodeStream.pipe(res);
+    
   } catch (e) { 
+    console.error("[PROXY ERROR]:", e.message);
     res.status(500).send(e.message); 
   }
 });
 
 export default app;
+
+// Local development ke liye server start karna
 if (process.env.NODE_ENV !== 'production') { 
   app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running successfully on port ${PORT}`);
   }); 
 }
