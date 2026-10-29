@@ -63,14 +63,12 @@ async function loadStream() {
     const data = await response.json();
     console.log("API Response:", data); 
 
-    let streamUrl = data.url; 
-
-    if (!streamUrl) {
+    if (!data.url) {
       throw new Error('API ne URL nahi diya.');
     }
     
-    // Ab link ke sath koi chher chhar nahi hogi, jo server.js dega wohi chalega
-    playHLS(streamUrl);
+    // Ab link ko kharab nahi karenge, jo server.js se aaya hai wohi chalega
+    playHLS(data.url);
     
   } catch (err) {
     setStatus('❌ ' + err.message, 'err');
