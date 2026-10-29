@@ -11,13 +11,9 @@
   .player-wrap { max-width:900px; margin:0 auto; padding:16px; }
   video { width:100%; border-radius:12px; background:#000; aspect-ratio:16/9; }
   .controls { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
-  input, button {
-    padding:10px 16px; border-radius:8px; border:none;
-    background:#1e1e1e; color:#fff; font-size:14px; cursor:pointer;
-  }
+  input, button { padding:10px 16px; border-radius:8px; border:none; background:#1e1e1e; color:#fff; font-size:14px; cursor:pointer; }
   input { flex: 1; min-width: 120px; }
   button { background:#e50914; font-weight:600; }
-  button:disabled { opacity: 0.5; }
   .status { margin-top:10px; font-size:13px; color:#888; word-break: break-all; }
   .status.live { color:#2ecc71; }
   .status.err { color:#e74c3c; }
@@ -28,9 +24,9 @@
   <video id="video" controls autoplay muted playsinline></video>
   
   <div class="controls" style="margin-top: 15px;">
-    <input type="text" id="channelInput" value="Madni-121" placeholder="Channel ID">
-    <input type="text" id="qualityInput" value="121H" placeholder="Quality">
-    <button id="loadBtn" onclick="loadStream()">▶ Play via API</button>
+    <!-- Ab humein channel ka SLUG chahiye (jaise abb-takk-news-live) -->
+    <input type="text" id="channelInput" value="abb-takk-news-live" placeholder="Channel Slug">
+    <button id="loadBtn" onclick="loadStream()">▶ Play Stream</button>
   </div>
   <div class="status" id="status">Idle</div>
 </div>
@@ -48,7 +44,6 @@ function setStatus(msg, cls='') {
 
 async function loadStream() {
   const channel = document.getElementById('channelInput').value.trim();
-  const quality = document.getElementById('qualityInput').value.trim();
   
   loadBtn.disabled = true;
   setStatus('API se stream URL mangwaya ja raha hai...');
@@ -57,7 +52,7 @@ async function loadStream() {
     const response = await fetch('/api/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel, quality })
+      body: JSON.stringify({ channel: channel })
     });
     
     const data = await response.json();
@@ -67,7 +62,6 @@ async function loadStream() {
       throw new Error('API ne URL nahi diya.');
     }
     
-    // Ab link ko kharab nahi karenge, jo server.js se aaya hai wohi chalega
     playHLS(data.url);
     
   } catch (err) {
