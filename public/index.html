@@ -11,10 +11,11 @@
   .player-wrap { max-width:900px; margin:0 auto; padding:16px; }
   video { width:100%; border-radius:12px; background:#000; aspect-ratio:16/9; }
   .controls { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
-  select, button {
+  input, button {
     padding:10px 16px; border-radius:8px; border:none;
     background:#1e1e1e; color:#fff; font-size:14px; cursor:pointer;
   }
+  input { flex: 1; min-width: 120px; }
   button { background:#e50914; font-weight:600; }
   button:disabled { opacity: 0.5; }
   .status { margin-top:10px; font-size:13px; color:#888; word-break: break-all; }
@@ -26,13 +27,9 @@
 <div class="player-wrap">
   <video id="video" controls autoplay muted playsinline></video>
   <div class="controls">
-    <select id="channel">
-      <option value="Madni-121|121H">Madni 121</option>
-      <option value="K21-News|k21">K21 News</option>
-      <option value="DW-English|dw">DW English</option>
-      <option value="Al-Jazeera|aljazeera">Al Jazeera</option>
-      <option value="Afghan-TV|afghan">Afghan TV</option>
-    </select>
+    <!-- Ab aap yahan channel aur quality type kar sakte hain -->
+    <input type="text" id="channelInput" value="tv-one-live" placeholder="Channel ID (e.g. tv-one-live)">
+    <input type="text" id="qualityInput" value="hd" placeholder="Quality (e.g. hd, sd, live)">
     <button id="loadBtn" onclick="loadStream()">▶ Load Stream</button>
   </div>
   <div class="status" id="status">Idle</div>
@@ -50,26 +47,29 @@ function setStatus(msg, cls='') {
 }
 
 async function loadStream() {
-  const [channel, quality] = document.getElementById('channel').value.split('|');
+  const channel = document.getElementById('channelInput').value;
+  const quality = document.getElementById('qualityInput').value;
+  
+  if(!channel || !quality) {
+    setStatus('❌ Channel aur Quality dono likhein', 'err');
+    return;
+  }
+
   loadBtn.disabled = true;
-  setStatus('Fetching fresh token & stream URL from server...');
+  setStatus('Fetching stream URL from server...');
   
   try {
-    // Hum apne hi Vercel server ki API call kar rahe hain (CORS bypass)
     const response = await fetch('/api/stream', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ channel, quality })
     });
     
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Server error');
 
-    // Agar response mein URL hai toh play karo
     const url = data.url || data.streaming_url || data.hls_url || data?.data?.url || data?.data?.streaming_url;
-    if (!url) throw new Error('No URL found in response');
+    if (!url) throw new Error('No URL found in response. Channel/Quality galat ho sakti hai.');
     
     playHLS(url);
   } catch (err) {
@@ -82,18 +82,11 @@ async function loadStream() {
 function playHLS(url) {
   if (hls) { hls.destroy(); hls = null; }
   
-  // Hum URL ko apne server ke proxy se pass kar rahe hain (CORS bypass)
   const proxiedUrl = '/proxy?url=' + encodeURIComponent(url);
   setStatus('Loading Stream...');
   
   if (Hls.isSupported()) {
-    hls = new Hls({
-      lowLatencyMode: true,
-      enableWorker: true,
-      backBufferLength: 30,
-      maxBufferLength: 15,
-      maxMaxBufferLength: 30
-    });
+    hls = new Hls({ lowLatencyMode: true, enableWorker: true });
     hls.loadSource(proxiedUrl);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -101,7 +94,7 @@ function playHLS(url) {
       setStatus('🟢 LIVE', 'live');
     });
     hls.on(Hls.Events.ERROR, (e, data) => {
-      if (data.fatal) setStatus('❌ Error: ' + data.type + ' — ' + data.details, 'err');
+      if (data.fatal) setStatus('❌ Error: ' + data.details, 'err');
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = proxiedUrl;
