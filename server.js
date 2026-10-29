@@ -29,7 +29,6 @@ let tokenCache = { token: process.env.MJ_TOKEN || null, expiresAt: 0 };
 async function getToken() {
   if (tokenCache.token && Date.now() < tokenCache.expiresAt - 60000) return tokenCache.token;
   
-  // API se guest token maangna
   const res = await fetch(`${CONFIG.API_BASE}/auth/login`, {
     method: 'POST',
     headers: HEADERS,
@@ -51,6 +50,8 @@ app.post('/api/stream', async (req, res) => {
   const { channel, quality } = req.body;
   try {
     const token = await getToken();
+    
+    // Hum API ko call kar rahe hain taake naya security token mile
     const response = await fetch(`${CONFIG.API_BASE}/streaming-url`, {
       method: 'POST',
       headers: { ...HEADERS, 'Authorization': `Bearer ${token}` },
@@ -58,12 +59,22 @@ app.post('/api/stream', async (req, res) => {
     });
     
     const data = await response.json();
-    res.json(data); // API ka asal jawab wapas bhej rahe hain
+    
+    // Agar API ne encrypted data (eData) bheja hai, toh hum khud link bana lenge
+    if (data.eData || data.data?.eData) {
+        // Hum direct link bana rahe hain jisme aapne jo quality aur channel dala hai
+        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/playlist.m3u8?wmsAuthSign=${data.eData || data.data.eData}`;
+        return res.json({ success: true, url: finalUrl });
+    }
+    
+    // Agar direct url mila toh wohi bhej do
+    res.json(data); 
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
+// Proxy waisa hi rahega
 app.get('/proxy', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).send('url required');
