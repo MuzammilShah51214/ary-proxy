@@ -65,7 +65,7 @@ app.post('/api/stream', async (req, res) => {
     
     if (authToken) {
         // 🔥 AAPKE BATAYE HUE NAYE FORMAT KE MUTABIQ LINK BANA RAHE HAIN
-        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/live/${quality}/playlist.m3u8?wmsAuthSign=${authToken}`;
+        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/live/${quality}/chunks.m3u8?wmsAuthSign=${authToken}`;
         
         return res.json({ success: true, url: finalUrl });
     }
