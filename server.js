@@ -51,7 +51,7 @@ app.post('/api/stream', async (req, res) => {
   try {
     const token = await getToken();
     
-    // API ko call kar rahe hain taake naya security token (eData) mile
+    // API se token mangwa rahe hain
     const response = await fetch(`${CONFIG.API_BASE}/streaming-url`, {
       method: 'POST',
       headers: { ...HEADERS, 'Authorization': `Bearer ${token}` },
@@ -64,21 +64,12 @@ app.post('/api/stream', async (req, res) => {
     const authToken = data.eData || data.data?.eData || data.token;
     
     if (authToken) {
-        // Hum link khud bana rahe hain aapke diye hue format ke mutabiq (playlist.m3u8)
-        let finalUrl = "";
-        
-        if (quality && quality.trim() !== "") {
-            // Agar quality di hai (jaise 121H)
-            finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/${quality}/playlist.m3u8?wmsAuthSign=${authToken}`;
-        } else {
-            // Agar quality khali hai
-            finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/playlist.m3u8?wmsAuthSign=${authToken}`;
-        }
+        // 🔥 AAPKE BATAYE HUE NAYE FORMAT KE MUTABIQ LINK BANA RAHE HAIN
+        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/live/${quality}/chunks.m3u8?wmsAuthSign=${authToken}`;
         
         return res.json({ success: true, url: finalUrl });
     }
     
-    // Agar direct url mila toh wohi bhej do
     res.json(data); 
   } catch (e) {
     res.status(500).json({ error: e.message });
