@@ -1,71 +1,85 @@
+// server.js
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 const app = express();
-
 app.use(cors());
-app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-app.post('/api/stream', async (req, res) => {
+const MJ_API = 'https://cdn2.mjunoon.tv:9191';
+let token = null;
+let expiry = 0;
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
   try {
-    const slug = req.body.slug;
-    if (!slug) return res.status(400).json({ error: 'Slug missing' });
-
-    console.log(`Fetching: ${slug}`);
-
-    // 1. Direct Mjunoon API try karein (Agar block ho toh ignore karega)
-    try {
-      const apiRes = await fetch('https://cdn2.mjunoon.tv:9191/v2/embed-player-url', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Referer': 'https://www.mjunoon.tv/',
-          'Origin': 'https://www.mjunoon.tv'
-        },
-        body: `slug=${slug}`
-      });
-      
-      if (apiRes.ok) {
-        const data = await apiRes.json();
-        if (data?.data?.live_stream_url) {
-          return res.json({ data: { live_stream_url: data.data.live_stream_url } });
-        }
-      }
-    } catch (e) {
-      console.log("API failed, moving to scraping.");
-    }
-
-    // 2. HTML Scraping (Agar API block kare) - Asal Embed URL
-    // Aapne jo link diya tha: https://www.mjunoon.tv/embedplayer/abb-takk-news-live.html
-    // Hum slug ki ID (e.g. -133) hata kar URL banayenge
-    let cleanSlug = slug.replace(/-[0-9]+.*$/, '').toLowerCase(); // AbbTakNews-133 -> abbtaknews
-    let embedUrl = `https://www.mjunoon.tv/embedplayer/${cleanSlug}-live.html`;
-
-    const htmlRes = await fetch(embedUrl, {
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
-        'Accept': 'text/html'
+    const { email, password } = req.body;
+    const r = await axios.post(`${MJ_API}/v2/auth/login`, { email, password }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Origin': 'https://www.mjunoon.tv',
+        'Referer': 'https://www.mjunoon.tv/',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
       }
     });
-
-    const html = await htmlRes.text();
-    
-    // HTML se m3u8 link nikalna
-    const streamRegex = /(https?:\/\/[^"']+\.m3u8[^"']*)/g;
-    const matches = html.match(streamRegex);
-
-    if (matches && matches.length > 0) {
-      return res.json({ data: { live_stream_url: matches[0] } });
-    }
-
-    return res.status(404).json({ error: 'Stream not found', slug });
-  } catch (error) {
-    res.status(500).json({ error: 'Proxy error', details: error.message });
+    token = r.data.token || r.data.access_token;
+    expiry = Date.now() + (r.data.expires_in || 3600) * 1000;
+    res.json({ ok: true, expires_in: r.data.expires_in });
+  } catch(e) {
+    res.status(500).json({ error: e.message, detail: e.response?.data });
   }
 });
 
-app.get('/', (req, res) => res.send('Proxy is Running ✅'));
+// Channel list
+app.get('/api/channels', async (req, res) => {
+  try {
+    const r = await axios.get(`${MJ_API}/v2//channel-types`, {
+      headers: {
+        'Authorization': `bearer ${token}`,
+        'Origin': 'https://www.mjunoon.tv',
+        'Referer': 'https://www.mjunoon.tv/'
+      }
+    });
+    res.json(r.data);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Server on port ${PORT}`));
+// Stream URL
+app.post('/api/stream-url', async (req, res) => {
+  try {
+    const r = await axios.post(`${MJ_API}/v2/streaming-url`, req.body, {
+      headers: {
+        'Authorization': `bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Origin': 'https://www.mjunoon.tv',
+        'Referer': 'https://www.mjunoon.tv/'
+      }
+    });
+    res.json(r.data);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// HLS proxy (CORS + Origin headers)
+app.get('/hls/*', async (req, res) => {
+  try {
+    const url = 'https://cdn5.mjunoon.tv:8087/' + req.params[0];
+    const r = await axios.get(url, {
+      responseType: 'stream',
+      headers: {
+        'Origin': 'https://www.mjunoon.tv',
+        'Referer': 'https://www.mjunoon.tv/',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
+      }
+    });
+    res.set('Content-Type', r.headers['content-type'] || 'application/octet-stream');
+    r.data.pipe(res);
+  } catch(e) {
+    res.status(500).send(e.message);
+  }
+});
+
+app.listen(3000, () => console.log('✅ http://localhost:3000'));
