@@ -15,7 +15,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const API_BASE = 'https://cdn2.mjunoon.tv:9191/v2';
 
-// 1. API Headers (Login aur Stream URL lene ke liye)
 const API_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36',
   'Accept': 'application/json, text/plain, */*',
@@ -24,7 +23,6 @@ const API_HEADERS = {
   'Referer': 'https://www.mjunoon.tv/',
 };
 
-// 2. Stream Headers (Cookies ke sath taake CDN server error na de)
 const STREAM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36',
   'Accept': '*/*',
@@ -36,7 +34,6 @@ const STREAM_HEADERS = {
 
 let tokenCache = { token: null, expiresAt: 0 };
 
-// Function: Guest Token fetch karna (Cache ke sath)
 async function getToken() {
   if (tokenCache.token && Date.now() < tokenCache.expiresAt - 60000) return tokenCache.token;
   
@@ -55,7 +52,7 @@ async function getToken() {
   throw new Error('Token fail');
 }
 
-// API Route: Stream URL generate karna (/streaming-url)
+// API Route: Stream URL generate karna with Debugging
 app.post('/api/stream', async (req, res) => {
   const { channel, quality } = req.body;
   if (!channel || !quality) {
@@ -65,6 +62,8 @@ app.post('/api/stream', async (req, res) => {
   try {
     const token = await getToken();
     
+    console.log(`Fetching stream for Channel: ${channel}, Quality: ${quality}`);
+    
     const response = await fetch(`${API_BASE}/streaming-url`, {
       method: 'POST',
       headers: { ...API_HEADERS, 'Authorization': `Bearer ${token}` },
@@ -72,28 +71,36 @@ app.post('/api/stream', async (req, res) => {
     });
     
     const data = await response.json();
-    const authToken = data.eData || data.data?.eData || data.token;
+    console.log("Upstream API Response:", JSON.stringify(data)); // Vercel logs mein check karne ke liye
     
-    if (authToken) {
-        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/live/${quality}/chunks.m3u8?wmsAuthSign=${authToken}`;
-        return res.json({ success: true, url: finalUrl });
+    // Sabhi possible keys check kar rahe hain jahan eData ya URL ho sakta hai
+    const authToken = data.eData || data.data?.eData || data.token || data.data?.token;
+    const directUrl = data.url || data.data?.url || data.stream_url;
+    
+    if (directUrl) {
+      return res.json({ success: true, url: directUrl });
     }
     
-    res.json(data); 
+    if (authToken) {
+      const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/live/${quality}/chunks.m3u8?wmsAuthSign=${authToken}`;
+      return res.json({ success: true, url: finalUrl });
+    }
+    
+    // Agar koi bhi token/url na mile to upstream ka error ya data wapas bhejiye
+    return res.json({ success: false, error: 'API did not return a valid token/URL', raw: data });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error("Stream API Error:", e.message);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
-// Proxy Route: CORS bypass aur m3u8/ts chunks load karne ke liye
+// Proxy Route
 app.get('/proxy', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).send('url required');
   
   try {
-    const upstream = await fetch(url, {
-      headers: STREAM_HEADERS
-    });
+    const upstream = await fetch(url, { headers: STREAM_HEADERS });
 
     if (!upstream.ok) {
       return res.status(upstream.status).send('upstream error: ' + upstream.status);
@@ -101,7 +108,6 @@ app.get('/proxy', async (req, res) => {
     
     const contentType = upstream.headers.get('content-type') || '';
     
-    // Agar playlist file (.m3u8) hai to links ko rewrite karein
     if (url.includes('.m3u8') || contentType.includes('mpegurl')) {
       const base = url.substring(0, url.lastIndexOf('/') + 1);
       let text = await upstream.text();
@@ -114,7 +120,6 @@ app.get('/proxy', async (req, res) => {
       return res.send(text);
     }
     
-    // Video chunks (.ts) ke liye stream pipe karna
     res.set('Content-Type', contentType || 'video/mp2t');
     const nodeStream = Readable.fromWeb(upstream.body);
     nodeStream.pipe(res);
