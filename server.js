@@ -63,7 +63,7 @@ app.post('/api/stream', async (req, res) => {
     // Agar API ne encrypted data (eData) bheja hai, toh hum khud link bana lenge
     if (data.eData || data.data?.eData) {
         // Hum direct link bana rahe hain jisme aapne jo quality aur channel dala hai
-        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/playlist.m3u8?wmsAuthSign=${data.eData || data.data.eData}`;
+        const finalUrl = `https://cdn5.mjunoon.tv:8087/web/${channel}/chunks.m3u8?wmsAuthSign=${data.eData || data.data.eData}`;
         return res.json({ success: true, url: finalUrl });
     }
     
