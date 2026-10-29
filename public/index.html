@@ -61,20 +61,17 @@ async function loadStream() {
     });
     
     const data = await response.json();
-    console.log("API Response:", data); // Debugging ke liye
+    console.log("API Response:", data); 
 
-    // API response mein URL dhoondein (kisi bhi key mein ho sakta hai)
-    let streamUrl = null;
-    if (data.url) streamUrl = data.url;
-    else if (data.streaming_url) streamUrl = data.streaming_url;
-    else if (data.hls_url) streamUrl = data.hls_url;
-    else if (data.data && data.data.url) streamUrl = data.data.url;
-    else if (data.data && data.data.streaming_url) streamUrl = data.data.streaming_url;
-    else if (typeof data === 'string' && data.includes('http')) streamUrl = data;
+    let streamUrl = data.url; 
 
     if (!streamUrl) {
-      // Agar API ne koi URL nahi diya, toh error show karein
-      throw new Error('API ne URL nahi diya. Server response: ' + JSON.stringify(data).slice(0, 100));
+      throw new Error('API ne URL nahi diya.');
+    }
+
+    // 🔥 AUTO-FIX: Agar link mein chunks.m3u8 hai, toh usko playlist.m3u8 kar do
+    if (streamUrl.includes('chunks.m3u8')) {
+        streamUrl = streamUrl.replace('chunks.m3u8', 'playlist.m3u8');
     }
     
     playHLS(streamUrl);
@@ -98,10 +95,10 @@ function playHLS(url) {
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       video.play().catch(()=>{});
-      setStatus('🟢 LIVE - API se chal raha hai!', 'live');
+      setStatus('🟢 LIVE - Chal gaya!', 'live');
     });
     hls.on(Hls.Events.ERROR, (e, data) => {
-      if (data.fatal) setStatus('❌ Player Error: ' + data.details, 'err');
+      if (data.fatal) setStatus('❌ Error: ' + data.details, 'err');
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = proxiedUrl;
